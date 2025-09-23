@@ -1,0 +1,621 @@
+package openblas
+
+import lapack "./f77"
+import "base:builtin"
+import "core:mem"
+
+// ===================================================================================
+// POSITIVE DEFINITE BANDED CHOLESKY FACTORIZATION AND TRIANGULAR SOLVE
+// ===================================================================================
+
+// Cholesky factorization for positive definite banded matrices proc group
+m_cholesky_factor_banded :: proc {
+	m_cholesky_factor_banded_c64,
+	m_cholesky_factor_banded_f64,
+	m_cholesky_factor_banded_f32,
+	m_cholesky_factor_banded_c128,
+}
+
+// Triangular solve using Cholesky factorization proc group
+m_cholesky_solve_banded :: proc {
+	m_cholesky_solve_banded_c64,
+	m_cholesky_solve_banded_f64,
+	m_cholesky_solve_banded_f32,
+	m_cholesky_solve_banded_c128,
+}
+
+// ===================================================================================
+// CHOLESKY FACTORIZATION IMPLEMENTATION
+// ===================================================================================
+
+// Cholesky factorization for positive definite banded matrix (c64)
+// Computes L or U such that A = L*L^H or A = U^H*U
+m_cholesky_factor_banded_c64 :: proc(
+	AB: ^Matrix(complex64),      // Banded matrix (input/output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 {
+		panic("Matrix cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("Matrix must be square")
+	}
+	if kd < 0 || kd >= AB.rows {
+		panic("Invalid bandwidth kd")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	ldab := Blas_Int(AB.ld)
+	info_val: Info
+
+	lapack.cpbtrf_(
+		uplo_c,
+		&n, &kd_val,
+		raw_data(AB.data), &ldab,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Cholesky factorization for positive definite banded matrix (f64)
+// Computes L or U such that A = L*L^T or A = U^T*U
+m_cholesky_factor_banded_f64 :: proc(
+	AB: ^Matrix(f64),            // Banded matrix (input/output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 {
+		panic("Matrix cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("Matrix must be square")
+	}
+	if kd < 0 || kd >= AB.rows {
+		panic("Invalid bandwidth kd")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	ldab := Blas_Int(AB.ld)
+	info_val: Info
+
+	lapack.dpbtrf_(
+		uplo_c,
+		&n, &kd_val,
+		raw_data(AB.data), &ldab,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Cholesky factorization for positive definite banded matrix (f32)
+// Computes L or U such that A = L*L^T or A = U^T*U
+m_cholesky_factor_banded_f32 :: proc(
+	AB: ^Matrix(f32),            // Banded matrix (input/output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 {
+		panic("Matrix cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("Matrix must be square")
+	}
+	if kd < 0 || kd >= AB.rows {
+		panic("Invalid bandwidth kd")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	ldab := Blas_Int(AB.ld)
+	info_val: Info
+
+	lapack.spbtrf_(
+		uplo_c,
+		&n, &kd_val,
+		raw_data(AB.data), &ldab,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Cholesky factorization for positive definite banded matrix (c128)
+// Computes L or U such that A = L*L^H or A = U^H*U
+m_cholesky_factor_banded_c128 :: proc(
+	AB: ^Matrix(complex128),     // Banded matrix (input/output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 {
+		panic("Matrix cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("Matrix must be square")
+	}
+	if kd < 0 || kd >= AB.rows {
+		panic("Invalid bandwidth kd")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	ldab := Blas_Int(AB.ld)
+	info_val: Info
+
+	lapack.zpbtrf_(
+		uplo_c,
+		&n, &kd_val,
+		raw_data(AB.data), &ldab,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// ===================================================================================
+// TRIANGULAR SOLVE IMPLEMENTATION
+// ===================================================================================
+
+// Solve system using Cholesky factorization (c64)
+// Solves A*X = B using factorization from CPBTRF
+m_cholesky_solve_banded_c64 :: proc(
+	AB: ^Matrix(complex64),      // Factorized matrix from CPBTRF
+	B: ^Matrix(complex64),       // Right-hand side (input/output - solution on output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 || len(B.data) == 0 {
+		panic("Matrices cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("AB must be square")
+	}
+	if B.rows != AB.rows {
+		panic("System dimensions must be consistent")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	nrhs := Blas_Int(B.cols)
+	ldab := Blas_Int(AB.ld)
+	ldb := Blas_Int(B.ld)
+	info_val: Info
+
+	lapack.cpbtrs_(
+		uplo_c,
+		&n, &kd_val, &nrhs,
+		raw_data(AB.data), &ldab,
+		raw_data(B.data), &ldb,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Solve system using Cholesky factorization (f64)
+// Solves A*X = B using factorization from DPBTRF
+m_cholesky_solve_banded_f64 :: proc(
+	AB: ^Matrix(f64),            // Factorized matrix from DPBTRF
+	B: ^Matrix(f64),             // Right-hand side (input/output - solution on output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 || len(B.data) == 0 {
+		panic("Matrices cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("AB must be square")
+	}
+	if B.rows != AB.rows {
+		panic("System dimensions must be consistent")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	nrhs := Blas_Int(B.cols)
+	ldab := Blas_Int(AB.ld)
+	ldb := Blas_Int(B.ld)
+	info_val: Info
+
+	lapack.dpbtrs_(
+		uplo_c,
+		&n, &kd_val, &nrhs,
+		raw_data(AB.data), &ldab,
+		raw_data(B.data), &ldb,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Solve system using Cholesky factorization (f32)
+// Solves A*X = B using factorization from SPBTRF
+m_cholesky_solve_banded_f32 :: proc(
+	AB: ^Matrix(f32),            // Factorized matrix from SPBTRF
+	B: ^Matrix(f32),             // Right-hand side (input/output - solution on output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 || len(B.data) == 0 {
+		panic("Matrices cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("AB must be square")
+	}
+	if B.rows != AB.rows {
+		panic("System dimensions must be consistent")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	nrhs := Blas_Int(B.cols)
+	ldab := Blas_Int(AB.ld)
+	ldb := Blas_Int(B.ld)
+	info_val: Info
+
+	lapack.spbtrs_(
+		uplo_c,
+		&n, &kd_val, &nrhs,
+		raw_data(AB.data), &ldab,
+		raw_data(B.data), &ldb,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// Solve system using Cholesky factorization (c128)
+// Solves A*X = B using factorization from ZPBTRF
+m_cholesky_solve_banded_c128 :: proc(
+	AB: ^Matrix(complex128),     // Factorized matrix from ZPBTRF
+	B: ^Matrix(complex128),      // Right-hand side (input/output - solution on output)
+	kd: int,                     // Number of super/sub-diagonals
+	uplo_upper := true,          // Upper or lower triangular storage
+	allocator := context.allocator,
+) -> (success: bool, info: Blas_Int) {
+	// Validate inputs
+	if len(AB.data) == 0 || len(B.data) == 0 {
+		panic("Matrices cannot be empty")
+	}
+	if AB.rows != AB.cols {
+		panic("AB must be square")
+	}
+	if B.rows != AB.rows {
+		panic("System dimensions must be consistent")
+	}
+
+	uplo_c := "U" if uplo_upper else "L"
+	n := Blas_Int(AB.cols)
+	kd_val := Blas_Int(kd)
+	nrhs := Blas_Int(B.cols)
+	ldab := Blas_Int(AB.ld)
+	ldb := Blas_Int(B.ld)
+	info_val: Info
+
+	lapack.zpbtrs_(
+		uplo_c,
+		&n, &kd_val, &nrhs,
+		raw_data(AB.data), &ldab,
+		raw_data(B.data), &ldb,
+		&info_val,
+		len(uplo_c),
+	)
+
+	return info_val == 0, info_val
+}
+
+// ===================================================================================
+// CONVENIENCE FUNCTIONS
+// ===================================================================================
+
+// Cholesky factorization result
+CholeskyFactorization :: struct($T: typeid) {
+	factor: Matrix(T),     // L or U factor
+	uplo_upper: bool,      // Whether upper triangular
+	kd: int,               // Bandwidth
+	success: bool,
+	info: Blas_Int,
+}
+
+// Complete Cholesky factorization workflow
+cholesky_factorize_banded :: proc(
+	A: Matrix($T),               // Input matrix
+	kd: int,                     // Bandwidth
+	uplo_upper := true,
+	allocator := context.allocator,
+) -> CholeskyFactorization(T) {
+	// Create banded storage copy
+	AB := make_banded_matrix(T, A.rows, A.cols, kd, kd, allocator)
+	copy_matrix_to_banded(&A, &AB, kd, uplo_upper)
+
+	// Perform factorization
+	when T == complex64 {
+		success, info := m_cholesky_factor_banded_c64(&AB, kd, uplo_upper, allocator)
+		return CholeskyFactorization(T){
+			factor = AB,
+			uplo_upper = uplo_upper,
+			kd = kd,
+			success = success,
+			info = info,
+		}
+	} else when T == f64 {
+		success, info := m_cholesky_factor_banded_f64(&AB, kd, uplo_upper, allocator)
+		return CholeskyFactorization(T){
+			factor = AB,
+			uplo_upper = uplo_upper,
+			kd = kd,
+			success = success,
+			info = info,
+		}
+	} else when T == f32 {
+		success, info := m_cholesky_factor_banded_f32(&AB, kd, uplo_upper, allocator)
+		return CholeskyFactorization(T){
+			factor = AB,
+			uplo_upper = uplo_upper,
+			kd = kd,
+			success = success,
+			info = info,
+		}
+	} else when T == complex128 {
+		success, info := m_cholesky_factor_banded_c128(&AB, kd, uplo_upper, allocator)
+		return CholeskyFactorization(T){
+			factor = AB,
+			uplo_upper = uplo_upper,
+			kd = kd,
+			success = success,
+			info = info,
+		}
+	} else {
+		panic("Unsupported type for Cholesky factorization")
+	}
+}
+
+// Solve using pre-computed Cholesky factorization
+cholesky_solve_with_factor :: proc(
+	chol: ^CholeskyFactorization($T),
+	b: []T,
+	allocator := context.allocator,
+) -> (x: []T, success: bool) {
+	if !chol.success {
+		return nil, false
+	}
+
+	// Create RHS matrix
+	B := make_matrix(T, len(b), 1, .General, allocator)
+	for i in 0..<len(b) {
+		matrix_set(&B, i, 0, b[i])
+	}
+
+	// Solve using factorization
+	when T == complex64 {
+		success, _ := m_cholesky_solve_banded_c64(&chol.factor, &B, chol.kd, chol.uplo_upper, allocator)
+	} else when T == f64 {
+		success, _ := m_cholesky_solve_banded_f64(&chol.factor, &B, chol.kd, chol.uplo_upper, allocator)
+	} else when T == f32 {
+		success, _ := m_cholesky_solve_banded_f32(&chol.factor, &B, chol.kd, chol.uplo_upper, allocator)
+	} else when T == complex128 {
+		success, _ := m_cholesky_solve_banded_c128(&chol.factor, &B, chol.kd, chol.uplo_upper, allocator)
+	} else {
+		panic("Unsupported type for Cholesky solve")
+	}
+
+	// Extract solution
+	if success {
+		x = make([]T, len(b), allocator)
+		for i in 0..<len(b) {
+			x[i] = matrix_get(&B, i, 0)
+		}
+	}
+
+	delete_matrix(&B)
+	return x, success
+}
+
+// Complete factor-and-solve workflow
+cholesky_solve_banded_system :: proc(
+	A: Matrix($T),               // Input matrix
+	b: []T,                      // Right-hand side
+	kd: int,                     // Bandwidth
+	uplo_upper := true,
+	allocator := context.allocator,
+) -> (x: []T, factorization: CholeskyFactorization(T)) where T: typeid {
+	// Factor the matrix
+	factorization = cholesky_factorize_banded(A, kd, uplo_upper, allocator)
+
+	if !factorization.success {
+		return nil, factorization
+	}
+
+	// Solve the system
+	x, _ = cholesky_solve_with_factor(&factorization, b, allocator)
+	return x, factorization
+}
+
+// Solve multiple systems with same matrix
+cholesky_solve_multiple :: proc(
+	chol: ^CholeskyFactorization($T),
+	B: ^Matrix(T),               // Multiple right-hand sides
+	allocator := context.allocator,
+) -> (X: Matrix(T), success: bool) where T: typeid {
+	if !chol.success {
+		return Matrix(T){}, false
+	}
+
+	// Create solution matrix
+	X = make_matrix(T, B.rows, B.cols, B.format, allocator)
+	copy_matrix(B, &X)
+
+	// Solve using factorization
+	when T == complex64 {
+		success, _ := m_cholesky_solve_banded_c64(&chol.factor, &X, chol.kd, chol.uplo_upper, allocator)
+	} else when T == f64 {
+		success, _ := m_cholesky_solve_banded_f64(&chol.factor, &X, chol.kd, chol.uplo_upper, allocator)
+	} else when T == f32 {
+		success, _ := m_cholesky_solve_banded_f32(&chol.factor, &X, chol.kd, chol.uplo_upper, allocator)
+	} else when T == complex128 {
+		success, _ := m_cholesky_solve_banded_c128(&chol.factor, &X, chol.kd, chol.uplo_upper, allocator)
+	} else {
+		panic("Unsupported type for Cholesky solve")
+	}
+
+	return X, success
+}
+
+// Check if matrix is positive definite based on factorization
+is_positive_definite :: proc(chol: CholeskyFactorization($T)) -> bool {
+	// PBTRF returns info > 0 if matrix is not positive definite
+	// info = i means the i-th leading minor is not positive definite
+	return chol.success && chol.info == 0
+}
+
+// Extract diagonal from Cholesky factor
+extract_cholesky_diagonal :: proc(
+	chol: ^CholeskyFactorization($T),
+	allocator := context.allocator,
+) -> []T where T: typeid {
+	if !chol.success {
+		return nil
+	}
+
+	n := chol.factor.cols
+	diag := make([]T, n, allocator)
+
+	// Extract diagonal elements from banded storage
+	for i in 0..<n {
+		// In banded storage, diagonal is at specific offset
+		if chol.uplo_upper {
+			// Upper triangular: diagonal at row kd
+			diag[i] = matrix_get(&chol.factor, chol.kd, i)
+		} else {
+			// Lower triangular: diagonal at row 0
+			diag[i] = matrix_get(&chol.factor, 0, i)
+		}
+	}
+
+	return diag
+}
+
+// Compute log-determinant using Cholesky factorization
+// log(det(A)) = 2 * sum(log(diag(L))) for A = L*L^T
+compute_log_determinant :: proc(
+	chol: ^CholeskyFactorization($T),
+) -> T where T: typeid {
+	if !chol.success {
+		return T(0)
+	}
+
+	log_det := T(0)
+	n := chol.factor.cols
+
+	// Sum log of diagonal elements
+	for i in 0..<n {
+		var diag_elem: T
+		if chol.uplo_upper {
+			diag_elem = matrix_get(&chol.factor, chol.kd, i)
+		} else {
+			diag_elem = matrix_get(&chol.factor, 0, i)
+		}
+
+		when T == complex64 || T == complex128 {
+			// For complex matrices, take real part of log
+			log_det += T(2) * log_complex(diag_elem)
+		} else {
+			log_det += T(2) * log(diag_elem)
+		}
+	}
+
+	return log_det
+}
+
+// Delete Cholesky factorization
+delete_cholesky_factorization :: proc(chol: ^CholeskyFactorization($T)) {
+	delete_matrix(&chol.factor)
+}
+
+// Utility functions
+copy_matrix_to_banded :: proc(
+	src: ^Matrix($T),
+	dst: ^Matrix(T),
+	kd: int,
+	uplo_upper: bool,
+) {
+	for j in 0..<src.cols {
+		for i in max(0, j-kd)..<min(src.rows, j+kd+1) {
+			val := matrix_get(src, i, j)
+			// Convert to banded storage format
+			if uplo_upper {
+				// Upper triangular banded storage
+				if i <= j {
+					band_row := kd + i - j
+					matrix_set(dst, band_row, j, val)
+				}
+			} else {
+				// Lower triangular banded storage
+				if i >= j {
+					band_row := i - j
+					matrix_set(dst, band_row, j, val)
+				}
+			}
+		}
+	}
+}
+
+copy_matrix :: proc(src: ^Matrix($T), dst: ^Matrix(T)) {
+	min_rows := min(src.rows, dst.rows)
+	min_cols := min(src.cols, dst.cols)
+	for j in 0..<min_cols {
+		for i in 0..<min_rows {
+			matrix_set(dst, i, j, matrix_get(src, i, j))
+		}
+	}
+}
+
+min :: proc(a, b: int) -> int {
+	return a if a < b else b
+}
+
+max :: proc(a, b: int) -> int {
+	return a if a > b else b
+}
+
+log :: proc(x: $T) -> T where T: typeid {
+	// Natural logarithm placeholder
+	return T(0)
+}
+
+log_complex :: proc(z: $T) -> T where T: typeid {
+	// Complex logarithm placeholder
+	return T(0)
+}
