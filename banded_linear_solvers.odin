@@ -8,43 +8,66 @@ import "core:mem"
 // POSITIVE DEFINITE BANDED LINEAR SYSTEM SOLVERS
 // ===================================================================================
 
-// Simple solver for positive definite banded systems (polymorphic)
-
 // Expert solver for positive definite banded systems proc group
-m_solve_banded_pd_expert :: proc {
-	m_solve_banded_pd_expert_f32_c64,
-	m_solve_banded_pd_expert_f64_c128,
+solve_banded_pd_expert :: proc {
+	solve_banded_pd_expert_f32_c64,
+	solve_banded_pd_expert_f64_c128,
 }
+
+
+banded_factor :: proc {
+	banded_factor_real,
+	banded_factor_c64,
+	banded_factor_c128,
+}
+
+solve_banded_factored :: proc {
+	solve_banded_factored_real,
+	solve_banded_factored_c64,
+	solve_banded_factored_c128,
+}
+
+solve_banded :: proc {
+	solve_banded_real,
+	solve_banded_c64,
+	solve_banded_c128,
+}
+
+solve_banded_expert :: proc {
+	solve_banded_expert_real,
+	solve_banded_expert_c64,
+	solve_banded_expert_c128,
+}
+
+solve_banded_expert_extended :: proc {
+	solve_banded_expert_extended_real,
+	solve_banded_expert_extended_c64,
+	solve_banded_expert_extended_c128,
+}
+
 
 // ===================================================================================
 // SIMPLE SOLVER IMPLEMENTATION
 // ===================================================================================
-
-// Solve positive definite banded system (polymorphic)
+// Solve positive definite banded system (generic)
 // Solves A*X = B where A is positive definite banded
-m_solve_banded_pd :: proc(
+solve_banded_pd :: proc(
+	uplo: MatrixRegion,
+	n: int,
+	kd: int,
+	nrhs: int,
 	AB: ^Matrix($T), // Banded matrix (input/output - factorized on output)
 	B: ^Matrix(T), // Right-hand side (input/output - solution on output)
-	kd: Blas_Int, // Number of super/sub-diagonals
-	uplo_upper := true, // Upper or lower triangular storage
-	allocator := context.allocator,
 ) -> (
 	info: Info,
 	ok: bool,
 ) where is_float(T) || is_complex(T) {
-	// Validate inputs
-	assert(len(AB.data) > 0 && len(B.data) > 0, "Matrices cannot be empty")
-	assert(AB.rows == AB.cols, "AB must be square")
-	assert(B.rows == AB.rows, "System dimensions must be consistent")
-	assert(kd >= 0 && kd < AB.rows, "Invalid bandwidth kd")
-
-	uplo_c: cstring = "U" if uplo_upper else "L"
-	n: Blas_Int = AB.cols
-	kd := kd
-	nrhs: Blas_Int = B.cols
-	ldab: Blas_Int = AB.ld
-	ldb: Blas_Int = B.ld
-	info_val: Info
+	uplo_c := matrix_region_to_cstring(uplo)
+	n := Blas_Int(n)
+	kd := Blas_Int(kd)
+	nrhs := Blas_Int(nrhs)
+	ldab := AB.ld
+	ldb := B.ld
 
 	when T == f32 {
 		lapack.spbsv_(
@@ -56,436 +79,1407 @@ m_solve_banded_pd :: proc(
 			&ldab,
 			raw_data(B.data),
 			&ldb,
-			&info_val,
+			&info,
 			len(uplo_c),
 		)
 	} else when T == f64 {
 		lapack.dpbsv_(
 			uplo_c,
 			&n,
-			&kd_val,
+			&kd,
 			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(B.data),
 			&ldb,
-			&info_val,
+			&info,
 			len(uplo_c),
 		)
 	} else when T == complex64 {
 		lapack.cpbsv_(
 			uplo_c,
 			&n,
-			&kd_val,
+			&kd,
 			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(B.data),
 			&ldb,
-			&info_val,
+			&info,
 			len(uplo_c),
 		)
 	} else when T == complex128 {
 		lapack.zpbsv_(
 			uplo_c,
 			&n,
-			&kd_val,
+			&kd,
 			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(B.data),
 			&ldb,
-			&info_val,
+			&info,
 			len(uplo_c),
 		)
 	}
 
-	return info_val, info_val == 0
+	return info, info == 0
 }
 
 // ===================================================================================
 // EXPERT SOLVER IMPLEMENTATION
 // ===================================================================================
 
-// Expert solver result structure
-ExpertSolverResult :: struct($T: typeid) {
-	X:     Matrix(T), // Solution matrix
-	rcond: T, // Reciprocal condition number
-	ferr:  []T, // Forward error bounds
-	berr:  []T, // Backward error bounds
-	equed: EquilibrationState, // Equilibration state
-	S:     []T, // Scaling factors (if equilibrated)
-	ok:    bool,
-	info:  Blas_Int,
+// Query result sizes for expert positive definite banded solver
+query_result_sizes_banded_pd_expert :: proc(
+	n: int,
+	nrhs: int,
+) -> (
+	S_size: int,
+	ferr_size: int,
+	berr_size: int,// Scaling factors array
+	rcond_size: int,// Forward error bounds array
+	equed_size: int, // Backward error bounds array// Reciprocal condition number (scalar)// Equilibration state (single byte)
+) {
+	return n, nrhs, nrhs, 1, 1
+}
+
+// Query workspace for expert positive definite banded solver
+query_workspace_banded_pd_expert :: proc(
+	$T: typeid,
+	n: int,
+	nrhs: int,
+) -> (
+	work: Blas_Int,
+	rwork: Blas_Int,
+	iwork: Blas_Int,
+) where is_float(T) ||
+	is_complex(T) {
+	when T == f32 || T == f64 {
+		return Blas_Int(3 * n), 0, Blas_Int(n)
+	} else when T == complex64 || T == complex128 {
+		return Blas_Int(2 * n), Blas_Int(n), 0
+	}
 }
 
 // Expert solve for positive definite banded system (f32/complex64)
 // Solves with equilibration, condition estimation, and error bounds
-m_solve_banded_pd_expert_f32_c64 :: proc(
+solve_banded_pd_expert_f32_c64 :: proc(
+	fact: FactorizationOption,
+	uplo: MatrixRegion,
+	n: int,
+	kd: int,
+	nrhs: int,
 	AB: ^Matrix($T), // Banded matrix (input/output)
+	AFB: ^Matrix(T), // Factored matrix (input/output)
+	equed: ^byte, // Equilibration state (input/output)
+	S: []f32, // Scaling factors (input/output)
 	B: ^Matrix(T), // Right-hand side (input/output)
-	kd: int, // Number of super/sub-diagonals
-	fact_option := FactorizationOption.Equilibrate,
-	uplo_upper := true, // Upper or lower triangular storage
-	AFB: ^Matrix(T) = nil, // Pre-factored matrix (optional)
-	S_in: []f32 = nil, // Input scaling factors (optional)
-	allocator := context.allocator,
-) -> ExpertSolverResult(f32) where T == f32 || T == complex64 {
+	X: ^Matrix(T), // Solution matrix (output)
+	rcond: ^f32, // Reciprocal condition number (output)
+	ferr: []f32, // Forward error bounds (output)
+	berr: []f32, // Backward error bounds (output)
+	work: []T, // Workspace
+	rwork: []f32 = nil, // Real workspace (complex only)
+	iwork: []Blas_Int = nil, // Integer workspace (real only)
+) -> (
+	info: Info,
+	ok: bool,
+) where T == f32 || T == complex64 {
 	// Validate inputs
-	n := AB.cols
-	nrhs := B.cols
-
-	// Prepare matrices
-	AFB_local: Matrix(T)
-	if AFB == nil {
-		AFB_local = make_matrix(T, n, n, AB.format, allocator)
-		copy_matrix(AB, &AFB_local)
-		AFB = &AFB_local
+	assert(len(S) >= n, "Scaling array too small")
+	assert(len(ferr) >= nrhs, "Forward error array too small")
+	assert(len(berr) >= nrhs, "Backward error array too small")
+	when T == f32 {
+		assert(len(work) >= 3 * n, "Work array too small")
+		assert(len(iwork) >= n, "Integer work array too small")
+	} else when T == complex64 {
+		assert(len(work) >= 2 * n, "Work array too small")
+		assert(len(rwork) >= n, "Real work array too small")
 	}
 
-	// Prepare solution matrix
-	X := make_matrix(T, B.rows, B.cols, B.format, allocator)
-
-	// Prepare arrays
-	S := S_in != nil ? S_in : make([]f32, n, allocator)
-	ferr := make([]f32, nrhs, allocator)
-	berr := make([]f32, nrhs, allocator)
-	rcond: f32
-	equed_c := _equilibration_to_char(.None)
-
 	// Prepare parameters
-	fact_c := _factorization_to_char(fact_option)
-	uplo_c := "U" if uplo_upper else "L"
-	n_val := Blas_Int(n)
-	kd_val := Blas_Int(kd)
-	nrhs_val := Blas_Int(nrhs)
-	ldab := Blas_Int(AB.ld)
-	ldafb := Blas_Int(AFB.ld)
-	ldb := Blas_Int(B.ld)
-	ldx := Blas_Int(X.ld)
-
-	// Allocate workspace and call appropriate routine
-	info_val: Info
+	fact_c := _factorization_to_char(fact)
+	uplo_c := matrix_region_to_cstring(uplo)
+	n := Blas_Int(n)
+	kd := Blas_Int(kd)
+	nrhs := Blas_Int(nrhs)
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
 
 	when T == f32 {
-		work := make([]f32, 3 * n, context.temp_allocator)
-		iwork := make([]Blas_Int, n, context.temp_allocator)
-
 		lapack.spbsvx_(
 			fact_c,
 			uplo_c,
-			&n_val,
-			&kd_val,
-			&nrhs_val,
+			&n,
+			&kd,
+			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(AFB.data),
 			&ldafb,
-			&equed_c,
+			equed,
 			raw_data(S),
 			raw_data(B.data),
 			&ldb,
 			raw_data(X.data),
 			&ldx,
-			&rcond,
+			rcond,
 			raw_data(ferr),
 			raw_data(berr),
 			raw_data(work),
 			raw_data(iwork),
-			&info_val,
+			&info,
 			len(fact_c),
 			len(uplo_c),
 			1,
 		)
 	} else when T == complex64 {
-		work := make([]complex64, 2 * n, context.temp_allocator)
-		rwork := make([]f32, n, context.temp_allocator)
-
 		lapack.cpbsvx_(
 			fact_c,
 			uplo_c,
-			&n_val,
-			&kd_val,
-			&nrhs_val,
+			&n,
+			&kd,
+			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(AFB.data),
 			&ldafb,
-			&equed_c,
+			equed,
 			raw_data(S),
 			raw_data(B.data),
 			&ldb,
 			raw_data(X.data),
 			&ldx,
-			&rcond,
+			rcond,
 			raw_data(ferr),
 			raw_data(berr),
 			raw_data(work),
 			raw_data(rwork),
-			&info_val,
+			&info,
 			len(fact_c),
 			len(uplo_c),
-			1, // Last is for equed
+			1,
 		)
 	}
 
-	equed_state := EquilibrationState.Applied if equed_c == "Y" else EquilibrationState.None
-
-	return ExpertSolverResult(f32) {
-		X = X,
-		rcond = rcond,
-		ferr = ferr,
-		berr = berr,
-		equed = equed_state,
-		S = S,
-		ok = info_val == 0,
-		info = info_val,
-	}
+	return info, info == 0
 }
 
 // Expert solve for positive definite banded system (f64/complex128)
-m_solve_banded_pd_expert_f64_c128 :: proc(
+// Solves with equilibration, condition estimation, and error bounds
+solve_banded_pd_expert_f64_c128 :: proc(
+	fact: FactorizationOption,
+	uplo: MatrixRegion,
+	n: int,
+	kd: int,
+	nrhs: int,
 	AB: ^Matrix($T), // Banded matrix (input/output)
+	AFB: ^Matrix(T), // Factored matrix (input/output)
+	equed: ^byte, // Equilibration state (input/output)
+	S: []f64, // Scaling factors (input/output)
 	B: ^Matrix(T), // Right-hand side (input/output)
-	kd: int, // Number of super/sub-diagonals
-	fact_option := FactorizationOption.Equilibrate,
-	uplo_upper := true, // Upper or lower triangular storage
-	AFB: ^Matrix(T) = nil, // Pre-factored matrix (optional)
-	S_in: []f64 = nil, // Input scaling factors (optional)
-	allocator := context.allocator,
-) -> ExpertSolverResult(f64) where T == f64 || T == complex128 {
+	X: ^Matrix(T), // Solution matrix (output)
+	rcond: ^f64, // Reciprocal condition number (output)
+	ferr: []f64, // Forward error bounds (output)
+	berr: []f64, // Backward error bounds (output)
+	work: []T, // Workspace
+	rwork: []f64 = nil, // Real workspace (complex only)
+	iwork: []Blas_Int = nil, // Integer workspace (real only)
+) -> (
+	info: Info,
+	ok: bool,
+) where T == f64 || T == complex128 {
 	// Validate inputs
-	n := AB.cols
-	nrhs := B.cols
-
-	// Prepare matrices
-	AFB_local: Matrix(T)
-	if AFB == nil {
-		AFB_local = make_matrix(T, n, n, AB.format, allocator)
-		copy_matrix(AB, &AFB_local)
-		AFB = &AFB_local
+	assert(len(S) >= n, "Scaling array too small")
+	assert(len(ferr) >= nrhs, "Forward error array too small")
+	assert(len(berr) >= nrhs, "Backward error array too small")
+	when T == f64 {
+		assert(len(work) >= 3 * n, "Work array too small")
+		assert(len(iwork) >= n, "Integer work array too small")
+	} else when T == complex128 {
+		assert(len(work) >= 2 * n, "Work array too small")
+		assert(len(rwork) >= n, "Real work array too small")
 	}
 
-	// Prepare solution matrix
-	X := make_matrix(T, B.rows, B.cols, B.format, allocator)
-
-	// Prepare arrays
-	S := S_in != nil ? S_in : make([]f64, n, allocator)
-	ferr := make([]f64, nrhs, allocator)
-	berr := make([]f64, nrhs, allocator)
-	rcond: f64
-	equed_c := _equilibration_to_char(.None)
-
 	// Prepare parameters
-	fact_c := _factorization_to_char(fact_option)
-	uplo_c := "U" if uplo_upper else "L"
-	n_val := Blas_Int(n)
-	kd_val := Blas_Int(kd)
-	nrhs_val := Blas_Int(nrhs)
-	ldab := Blas_Int(AB.ld)
-	ldafb := Blas_Int(AFB.ld)
-	ldb := Blas_Int(B.ld)
-	ldx := Blas_Int(X.ld)
-
-	// Allocate workspace and call appropriate routine
-	info_val: Info
+	fact_c := _factorization_to_char(fact)
+	uplo_c := matrix_region_to_cstring(uplo)
+	n := Blas_Int(n)
+	kd := Blas_Int(kd)
+	nrhs := Blas_Int(nrhs)
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
 
 	when T == f64 {
-		work := make([]f64, 3 * n, context.temp_allocator)
-		iwork := make([]Blas_Int, n, context.temp_allocator)
-
 		lapack.dpbsvx_(
 			fact_c,
 			uplo_c,
-			&n_val,
-			&kd_val,
-			&nrhs_val,
+			&n,
+			&kd,
+			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(AFB.data),
 			&ldafb,
-			&equed_c,
+			equed,
 			raw_data(S),
 			raw_data(B.data),
 			&ldb,
 			raw_data(X.data),
 			&ldx,
-			&rcond,
+			rcond,
 			raw_data(ferr),
 			raw_data(berr),
 			raw_data(work),
 			raw_data(iwork),
-			&info_val,
+			&info,
 			len(fact_c),
 			len(uplo_c),
 			1,
 		)
 	} else when T == complex128 {
-		work := make([]complex128, 2 * n, context.temp_allocator)
-		rwork := make([]f64, n, context.temp_allocator)
-
 		lapack.zpbsvx_(
 			fact_c,
 			uplo_c,
-			&n_val,
-			&kd_val,
-			&nrhs_val,
+			&n,
+			&kd,
+			&nrhs,
 			raw_data(AB.data),
 			&ldab,
 			raw_data(AFB.data),
 			&ldafb,
-			&equed_c,
+			equed,
 			raw_data(S),
 			raw_data(B.data),
 			&ldb,
 			raw_data(X.data),
 			&ldx,
-			&rcond,
+			rcond,
 			raw_data(ferr),
 			raw_data(berr),
 			raw_data(work),
 			raw_data(rwork),
-			&info_val,
+			&info,
 			len(fact_c),
 			len(uplo_c),
 			1,
 		)
 	}
 
-	equed_state := EquilibrationState.Applied if equed_c == "Y" else EquilibrationState.None
-
-	return ExpertSolverResult(f64) {
-		X = X,
-		rcond = rcond,
-		ferr = ferr,
-		berr = berr,
-		equed = equed_state,
-		S = S,
-		ok = info_val == 0,
-		info = info_val,
-	}
+	return info, info == 0
 }
 
 
 // ===================================================================================
-// CONVENIENCE FUNCTIONS
+// FACTORIZATION
 // ===================================================================================
 
-// Simple solve with solution extraction
-solve_banded_system :: proc(
-	A: Matrix($T), // Input matrix (will be copied)
-	b: []T, // Right-hand side vector
-	kd: int, // Bandwidth
-	uplo_upper := true,
-	allocator := context.allocator,
+// Query result sizes for banded LU factorization
+query_result_sizes_banded_factor :: proc(
+	m: int,
+	n: int,
 ) -> (
-	x: []T,
+	ipiv_size: int, // Pivot indices array
+) {
+	return min(m, n)
+}
+
+// LU factorization doesn't need workspace
+query_workspace_banded_factor :: proc(
+	$T: typeid,
+	m: int,
+	n: int,
+) -> (
+	work: Blas_Int,
+	rwork: Blas_Int,
+) where is_float(T) ||
+	is_complex(T) {
+	return 0, 0
+}
+
+// LU factorization of banded matrix (real version)
+banded_factor_real :: proc(
+	AB: ^Matrix($T), // Banded matrix (overwritten with LU factorization)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size min(m,n))
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	m := AB.rows
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	ldab := AB.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= min(int(m), int(n)), "Pivot array too small")
+
+	when T == f32 {
+		lapack.sgbtrf_(&m, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &info)
+	} else when T == f64 {
+		lapack.dgbtrf_(&m, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &info)
+	}
+
+	return info, info == 0
+}
+
+// LU factorization of banded matrix (complex64 version)
+banded_factor_c64 :: proc(
+	AB: ^Matrix(complex64), // Banded matrix (overwritten with LU factorization)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size min(m,n))
+) -> (
+	info: Info,
 	ok: bool,
 ) {
-	// Create working copies
-	AB := make_banded_matrix(T, A.rows, A.cols, kd, kd, allocator)
-	copy_matrix(&A, &AB)
+	assert(AB.format == .Banded, "Matrix must be in banded format")
 
-	B := make_matrix(T, len(b), 1, .General, allocator)
-	for i in 0 ..< len(b) {
-		matrix_set(&B, i, 0, b[i])
-	}
+	m := AB.rows
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	ldab := AB.ld
 
-	// Solve system
-	ok, _ = m_solve_banded_pd(&AB, &B, Blas_Int(kd), uplo_upper, allocator)
+	// Validate inputs
+	assert(len(ipiv) >= min(int(m), int(n)), "Pivot array too small")
 
-	// Extract solution
-	if ok {
-		x = make([]T, len(b), allocator)
-		for i in 0 ..< len(b) {
-			x[i] = matrix_get(&B, i, 0)
-		}
-	}
+	lapack.cgbtrf_(&m, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &info)
 
-	delete_matrix(&AB)
-	delete_matrix(&B)
-	return x, ok
+	return info, info == 0
 }
 
-solve_banded_expert :: proc(
-	A: Matrix($T), // Input matrix
-	b: []T, // Right-hand side
-	kd: int, // Bandwidth
-	equilibrate := true,
-	uplo_upper := true,
-	allocator := context.allocator,
+// LU factorization of banded matrix (complex128 version)
+banded_factor_c128 :: proc(
+	AB: ^Matrix(complex128), // Banded matrix (overwritten with LU factorization)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size min(m,n))
 ) -> (
-	result: ExpertSolverResult(T),
+	info: Info,
+	ok: bool,
 ) {
-	// Create working copies
-	AB := make_banded_matrix(T, A.rows, A.cols, kd, kd, allocator)
-	copy_matrix(&A, &AB)
+	assert(AB.format == .Banded, "Matrix must be in banded format")
 
-	B := make_matrix(T, len(b), 1, .General, allocator)
-	for i in 0 ..< len(b) {
-		matrix_set(&B, i, 0, b[i])
-	}
+	m := AB.rows
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	ldab := AB.ld
 
-	fact_option := FactorizationOption.Equilibrate if equilibrate else FactorizationOption.Factor
+	// Validate inputs
+	assert(len(ipiv) >= min(int(m), int(n)), "Pivot array too small")
 
-	when T == f32 || T == complex64 {
-		result = m_solve_banded_pd_expert_f32_c64(
-			&AB,
-			&B,
-			kd,
-			fact_option,
-			uplo_upper,
-			nil,
-			nil,
-			allocator,
-		)
-	} else when T == f64 || T == complex128 {
-		result = m_solve_banded_pd_expert_f64_c128(
-			&AB,
-			&B,
-			kd,
-			fact_option,
-			uplo_upper,
-			nil,
-			nil,
-			allocator,
-		)
-	} else {
-		#panic("Unsupported type for expert solve")
-	}
+	lapack.zgbtrf_(&m, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &info)
 
-	delete_matrix(&AB)
-	delete_matrix(&B)
-	return result
+	return info, info == 0
 }
 
-is_solution_accurate :: proc(
-	result: ExpertSolverResult($T),
-	tolerance: T,
-) -> bool where is_float(T) ||
+// Solve using pre-computed LU factorization (real version)
+solve_banded_factored_real :: proc(
+	AB: ^Matrix($T), // LU factorization from banded_factor
+	ipiv: []Blas_Int, // Pivot indices from banded_factor
+	B: ^Matrix(T), // Right-hand side (overwritten with solution)
+	trans := TransposeMode.None, // Transpose mode
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	trans_str := transpose_mode_to_cstring(trans)
+
+	when T == f32 {
+		lapack.sgbtrs_(
+			trans_str,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(ipiv),
+			raw_data(B.data),
+			&ldb,
+			&info,
+			1,
+		)
+	} else when T == f64 {
+		lapack.dgbtrs_(
+			trans_str,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(ipiv),
+			raw_data(B.data),
+			&ldb,
+			&info,
+			1,
+		)
+	}
+
+	return info, info == 0
+}
+
+// Solve using pre-computed LU factorization (complex64 version)
+solve_banded_factored_c64 :: proc(
+	AB: ^Matrix(complex64), // LU factorization from banded_factor
+	ipiv: []Blas_Int, // Pivot indices from banded_factor
+	B: ^Matrix(complex64), // Right-hand side (overwritten with solution)
+	trans := TransposeMode.None, // Transpose mode
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	trans_str := transpose_mode_to_cstring(trans)
+
+	lapack.cgbtrs_(
+		trans_str,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(ipiv),
+		raw_data(B.data),
+		&ldb,
+		&info,
+		1,
+	)
+
+	return info, info == 0
+}
+
+// Solve using pre-computed LU factorization (complex128 version)
+solve_banded_factored_c128 :: proc(
+	AB: ^Matrix(complex128), // LU factorization from banded_factor
+	ipiv: []Blas_Int, // Pivot indices from banded_factor
+	B: ^Matrix(complex128), // Right-hand side (overwritten with solution)
+	trans := TransposeMode.None, // Transpose mode
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	trans_str := transpose_mode_to_cstring(trans)
+
+	lapack.zgbtrs_(
+		trans_str,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(ipiv),
+		raw_data(B.data),
+		&ldb,
+		&info,
+		1,
+	)
+
+	return info, info == 0
+}
+
+// ===================================================================================
+// LINEAR SYSTEM SOLVERS
+// ===================================================================================
+
+// Query result sizes for banded solve
+query_result_sizes_solve_banded :: proc(
+	n: int,
+) -> (
+	ipiv_size: int, // Pivot indices array
+) {
+	return n
+}
+
+// Solve banded linear system (real version)
+// Solves AB * X = B, where AB is a banded matrix
+solve_banded_real :: proc(
+	AB: ^Matrix($T), // Banded matrix (overwritten with LU factorization)
+	B: ^Matrix(T), // Right-hand side (overwritten with solution)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size n)
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+
+	when T == f32 {
+		lapack.sgbsv_(
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(ipiv),
+			raw_data(B.data),
+			&ldb,
+			&info,
+		)
+	} else when T == f64 {
+		lapack.dgbsv_(
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(ipiv),
+			raw_data(B.data),
+			&ldb,
+			&info,
+		)
+	}
+
+	return info, info == 0
+}
+
+// Solve banded linear system (complex64 version)
+// Solves AB * X = B, where AB is a banded matrix
+solve_banded_c64 :: proc(
+	AB: ^Matrix(complex64), // Banded matrix (overwritten with LU factorization)
+	B: ^Matrix(complex64), // Right-hand side (overwritten with solution)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size n)
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+
+	lapack.cgbsv_(
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(ipiv),
+		raw_data(B.data),
+		&ldb,
+		&info,
+	)
+
+	return info, info == 0
+}
+
+// Solve banded linear system (complex128 version)
+// Solves AB * X = B, where AB is a banded matrix
+solve_banded_c128 :: proc(
+	AB: ^Matrix(complex128), // Banded matrix (overwritten with LU factorization)
+	B: ^Matrix(complex128), // Right-hand side (overwritten with solution)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (size n)
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldb := B.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+
+	lapack.zgbsv_(
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(ipiv),
+		raw_data(B.data),
+		&ldb,
+		&info,
+	)
+
+	return info, info == 0
+}
+
+// ===================================================================================
+// EXPERT SOLVERS
+// ===================================================================================
+
+// Query result sizes for expert banded solve
+query_result_sizes_solve_banded_expert :: proc(
+	n: int,
+	kl: int,
+	ku: int,
+	nrhs: int,
+) -> (
+	ipiv_size: int,
+	AFB_rows: int,
+	AFB_cols: int,
+	R_size: int,
+	C_size: int,
+	X_rows: int,
+	X_cols: int,
+	ferr_size: int,
+	berr_size: int,
+	rcond_size: int,
+	equed_size: int, // Pivot indices array// Factored matrix rows// Factored matrix columns// Row scale factors// Column scale factors// Solution matrix rows// Solution matrix columns// Forward error bounds// Backward error bounds// Reciprocal condition number (scalar)// Equilibration state (single byte)
+) {
+	return n, 2 * kl + ku + 1, n, n, n, n, nrhs, nrhs, nrhs, 1, 1
+}
+
+// Query workspace for expert banded solve
+query_workspace_solve_banded_expert :: proc(
+	$T: typeid,
+	n: int,
+) -> (
+	work: Blas_Int,
+	rwork: Blas_Int,
+	iwork: Blas_Int,
+) where is_float(T) ||
 	is_complex(T) {
-	if !result.ok {
-		return false
+	when is_float(T) {
+		return Blas_Int(3 * n), 0, Blas_Int(n)
+	} else when T == complex64 || T == complex128 {
+		return Blas_Int(2 * n), Blas_Int(n), 0
 	}
-
-	// Check condition number
-	if result.rcond < tolerance {
-		return false // Matrix is ill-conditioned
-	}
-
-	// Check error bounds
-	for err in result.ferr {
-		if err > tolerance {
-			return false
-		}
-	}
-
-	return true
 }
 
-delete_expert_result :: proc(result: ^ExpertSolverResult($T)) {
-	delete_matrix(&result.X)
-	if result.ferr != nil do delete(result.ferr)
-	if result.berr != nil do delete(result.berr)
-	if result.S != nil do delete(result.S)
+// Expert solve for banded system (real version)
+solve_banded_expert_real :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix($T), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(T), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []T, // Pre-allocated row scale factors (input/output)
+	C: []T, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(T), // Right-hand side (input/output)
+	X: ^Matrix(T), // Pre-allocated solution matrix (output)
+	rcond: ^T, // Output: reciprocal condition number
+	ferr: []T, // Pre-allocated forward error bounds (output)
+	berr: []T, // Pre-allocated backward error bounds (output)
+	work: []T, // Pre-allocated workspace
+	iwork: []Blas_Int, // Pre-allocated integer workspace
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(ferr) >= int(nrhs), "Forward error array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(work) >= 3 * int(n), "Work array too small")
+	assert(len(iwork) >= int(n), "Integer work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	when T == f32 {
+		lapack.sgbsvx_(
+			fact_c,
+			trans_c,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(AFB.data),
+			&ldafb,
+			raw_data(ipiv),
+			&equed_byte,
+			raw_data(R),
+			raw_data(C),
+			raw_data(B.data),
+			&ldb,
+			raw_data(X.data),
+			&ldx,
+			rcond,
+			raw_data(ferr),
+			raw_data(berr),
+			raw_data(work),
+			raw_data(iwork),
+			&info,
+			len(fact_c),
+			len(trans_c),
+			1,
+		)
+	} else when T == f64 {
+		lapack.dgbsvx_(
+			fact_c,
+			trans_c,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(AFB.data),
+			&ldafb,
+			raw_data(ipiv),
+			&equed_byte,
+			raw_data(R),
+			raw_data(C),
+			raw_data(B.data),
+			&ldb,
+			raw_data(X.data),
+			&ldx,
+			rcond,
+			raw_data(ferr),
+			raw_data(berr),
+			raw_data(work),
+			raw_data(iwork),
+			&info,
+			len(fact_c),
+			len(trans_c),
+			1,
+		)
+	}
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
+}
+
+// Expert solve for banded system (complex64 version)
+solve_banded_expert_c64 :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix(complex64), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(complex64), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []f32, // Pre-allocated row scale factors (input/output)
+	C: []f32, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(complex64), // Right-hand side (input/output)
+	X: ^Matrix(complex64), // Pre-allocated solution matrix (output)
+	rcond: ^f32, // Output: reciprocal condition number
+	ferr: []f32, // Pre-allocated forward error bounds (output)
+	berr: []f32, // Pre-allocated backward error bounds (output)
+	work: []complex64, // Pre-allocated workspace
+	rwork: []f32, // Pre-allocated real workspace
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(ferr) >= int(nrhs), "Forward error array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(work) >= 2 * int(n), "Work array too small")
+	assert(len(rwork) >= int(n), "Real work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	lapack.cgbsvx_(
+		fact_c,
+		trans_c,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(AFB.data),
+		&ldafb,
+		raw_data(ipiv),
+		&equed_byte,
+		raw_data(R),
+		raw_data(C),
+		raw_data(B.data),
+		&ldb,
+		raw_data(X.data),
+		&ldx,
+		rcond,
+		raw_data(ferr),
+		raw_data(berr),
+		raw_data(work),
+		raw_data(rwork),
+		&info,
+		len(fact_c),
+		len(trans_c),
+		1,
+	)
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
+}
+
+// Expert solve for banded system (complex128 version)
+solve_banded_expert_c128 :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix(complex128), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(complex128), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []f64, // Pre-allocated row scale factors (input/output)
+	C: []f64, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(complex128), // Right-hand side (input/output)
+	X: ^Matrix(complex128), // Pre-allocated solution matrix (output)
+	rcond: ^f64, // Output: reciprocal condition number
+	ferr: []f64, // Pre-allocated forward error bounds (output)
+	berr: []f64, // Pre-allocated backward error bounds (output)
+	work: []complex128, // Pre-allocated workspace
+	rwork: []f64, // Pre-allocated real workspace
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(ferr) >= int(nrhs), "Forward error array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(work) >= 2 * int(n), "Work array too small")
+	assert(len(rwork) >= int(n), "Real work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	lapack.zgbsvx_(
+		fact_c,
+		trans_c,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(AFB.data),
+		&ldafb,
+		raw_data(ipiv),
+		&equed_byte,
+		raw_data(R),
+		raw_data(C),
+		raw_data(B.data),
+		&ldb,
+		raw_data(X.data),
+		&ldx,
+		rcond,
+		raw_data(ferr),
+		raw_data(berr),
+		raw_data(work),
+		raw_data(rwork),
+		&info,
+		len(fact_c),
+		len(trans_c),
+		1,
+	)
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
+}
+
+// ===================================================================================
+// EXTENDED EXPERT SOLVERS
+// ===================================================================================
+
+// Query result sizes for extended expert banded solve
+query_result_sizes_solve_banded_expert_extended :: proc(
+	n: int,
+	kl: int,
+	ku: int,
+	nrhs: int,
+	n_err_bnds: int,
+) -> (
+	ipiv_size: int,
+	AFB_rows: int,
+	AFB_cols: int,
+	R_size: int,
+	C_size: int,
+	X_rows: int,
+	X_cols: int,
+	berr_size: int,
+	err_bnds_norm_size: int,
+	err_bnds_comp_size: int,
+	params_size: int,
+	rcond_size: int,
+	rpvgrw_size: int,
+	equed_size: int, // Pivot indices array// Factored matrix rows// Factored matrix columns// Row scale factors// Column scale factors// Solution matrix rows// Solution matrix columns// Backward error bounds// Normwise error bounds// Componentwise error bounds// Algorithm parameters// Reciprocal condition number (scalar)// Reciprocal pivot growth (scalar)// Equilibration state (single byte)
+) {
+	return n,
+		2 * kl + ku + 1,
+		n,
+		n,
+		n,
+		n,
+		nrhs,
+		nrhs,
+		nrhs * n_err_bnds,
+		nrhs * n_err_bnds,
+		3,
+		1,
+		1,
+		1
+}
+
+// Query workspace for extended expert banded solve
+query_workspace_solve_banded_expert_extended :: proc(
+	$T: typeid,
+	n: int,
+) -> (
+	work: Blas_Int,
+	rwork: Blas_Int,
+	iwork: Blas_Int,
+) where is_float(T) ||
+	is_complex(T) {
+	when is_float(T) {
+		return Blas_Int(4 * n), 0, Blas_Int(n)
+	} else when T == complex64 || T == complex128 {
+		return Blas_Int(2 * n), Blas_Int(2 * n), 0
+	}
+}
+
+// Extended expert solve for banded system (real version)
+solve_banded_expert_extended_real :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix($T), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(T), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []T, // Pre-allocated row scale factors (input/output)
+	C: []T, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(T), // Right-hand side (input/output)
+	X: ^Matrix(T), // Pre-allocated solution matrix (output)
+	rcond: ^T, // Output: reciprocal condition number
+	rpvgrw: ^T, // Output: reciprocal pivot growth factor
+	berr: []T, // Pre-allocated backward error bounds (output)
+	n_err_bnds: Blas_Int, // Number of error bounds to compute
+	err_bnds_norm: []T, // Pre-allocated normwise error bounds (output)
+	err_bnds_comp: []T, // Pre-allocated componentwise error bounds (output)
+	params: []T, // Algorithm parameters (input/output)
+	work: []T, // Pre-allocated workspace
+	iwork: []Blas_Int, // Pre-allocated integer workspace
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+	n_err_bnds := n_err_bnds
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(err_bnds_norm) >= int(nrhs * n_err_bnds), "Normwise error bounds array too small")
+	assert(
+		len(err_bnds_comp) >= int(nrhs * n_err_bnds),
+		"Componentwise error bounds array too small",
+	)
+	assert(len(params) >= 3, "Parameters array too small")
+	assert(len(work) >= 4 * int(n), "Work array too small")
+	assert(len(iwork) >= int(n), "Integer work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	// Set nparams
+	nparams := Blas_Int(len(params))
+
+	when T == f32 {
+		lapack.sgbsvxx_(
+			fact_c,
+			trans_c,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(AFB.data),
+			&ldafb,
+			raw_data(ipiv),
+			&equed_byte,
+			raw_data(R),
+			raw_data(C),
+			raw_data(B.data),
+			&ldb,
+			raw_data(X.data),
+			&ldx,
+			rcond,
+			rpvgrw,
+			raw_data(berr),
+			&n_err_bnds,
+			raw_data(err_bnds_norm),
+			raw_data(err_bnds_comp),
+			&nparams,
+			raw_data(params),
+			raw_data(work),
+			raw_data(iwork),
+			&info,
+			len(fact_c),
+			len(trans_c),
+			1,
+		)
+	} else when T == f64 {
+		lapack.dgbsvxx_(
+			fact_c,
+			trans_c,
+			&n,
+			&kl,
+			&ku,
+			&nrhs,
+			raw_data(AB.data),
+			&ldab,
+			raw_data(AFB.data),
+			&ldafb,
+			raw_data(ipiv),
+			&equed_byte,
+			raw_data(R),
+			raw_data(C),
+			raw_data(B.data),
+			&ldb,
+			raw_data(X.data),
+			&ldx,
+			rcond,
+			rpvgrw,
+			raw_data(berr),
+			&n_err_bnds,
+			raw_data(err_bnds_norm),
+			raw_data(err_bnds_comp),
+			&nparams,
+			raw_data(params),
+			raw_data(work),
+			raw_data(iwork),
+			&info,
+			len(fact_c),
+			len(trans_c),
+			1,
+		)
+	}
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
+}
+
+// Extended expert solve for banded system (complex64 version)
+solve_banded_expert_extended_c64 :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix(complex64), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(complex64), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []f32, // Pre-allocated row scale factors (input/output)
+	C: []f32, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(complex64), // Right-hand side (input/output)
+	X: ^Matrix(complex64), // Pre-allocated solution matrix (output)
+	rcond: ^f32, // Output: reciprocal condition number
+	rpvgrw: ^f32, // Output: reciprocal pivot growth factor
+	berr: []f32, // Pre-allocated backward error bounds (output)
+	n_err_bnds: Blas_Int, // Number of error bounds to compute
+	err_bnds_norm: []f32, // Pre-allocated normwise error bounds (output)
+	err_bnds_comp: []f32, // Pre-allocated componentwise error bounds (output)
+	params: []f32, // Algorithm parameters (input/output)
+	work: []complex64, // Pre-allocated workspace
+	rwork: []f32, // Pre-allocated real workspace
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+	n_err_bnds := n_err_bnds
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(err_bnds_norm) >= int(nrhs * n_err_bnds), "Normwise error bounds array too small")
+	assert(
+		len(err_bnds_comp) >= int(nrhs * n_err_bnds),
+		"Componentwise error bounds array too small",
+	)
+	assert(len(params) >= 3, "Parameters array too small")
+	assert(len(work) >= 2 * int(n), "Work array too small")
+	assert(len(rwork) >= 2 * int(n), "Real work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	// Set nparams
+	nparams := Blas_Int(len(params))
+
+	lapack.cgbsvxx_(
+		fact_c,
+		trans_c,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(AFB.data),
+		&ldafb,
+		raw_data(ipiv),
+		&equed_byte,
+		raw_data(R),
+		raw_data(C),
+		raw_data(B.data),
+		&ldb,
+		raw_data(X.data),
+		&ldx,
+		rcond,
+		rpvgrw,
+		raw_data(berr),
+		&n_err_bnds,
+		raw_data(err_bnds_norm),
+		raw_data(err_bnds_comp),
+		&nparams,
+		raw_data(params),
+		raw_data(work),
+		raw_data(rwork),
+		&info,
+		len(fact_c),
+		len(trans_c),
+		1,
+	)
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
+}
+
+// Extended expert solve for banded system (complex128 version)
+solve_banded_expert_extended_c128 :: proc(
+	fact: FactorizationOption,
+	trans: TransposeMode,
+	AB: ^Matrix(complex128), // Banded matrix (input/output based on fact)
+	AFB: ^Matrix(complex128), // Pre-allocated factored matrix (input/output based on fact)
+	ipiv: []Blas_Int, // Pre-allocated pivot indices (input/output based on fact)
+	equed: ^EquilibrationRequest, // Equilibration state (input/output)
+	R: []f64, // Pre-allocated row scale factors (input/output)
+	C: []f64, // Pre-allocated column scale factors (input/output)
+	B: ^Matrix(complex128), // Right-hand side (input/output)
+	X: ^Matrix(complex128), // Pre-allocated solution matrix (output)
+	rcond: ^f64, // Output: reciprocal condition number
+	rpvgrw: ^f64, // Output: reciprocal pivot growth factor
+	berr: []f64, // Pre-allocated backward error bounds (output)
+	n_err_bnds: Blas_Int, // Number of error bounds to compute
+	err_bnds_norm: []f64, // Pre-allocated normwise error bounds (output)
+	err_bnds_comp: []f64, // Pre-allocated componentwise error bounds (output)
+	params: []f64, // Algorithm parameters (input/output)
+	work: []complex128, // Pre-allocated workspace
+	rwork: []f64, // Pre-allocated real workspace
+) -> (
+	info: Info,
+	ok: bool,
+) {
+	assert(AB.format == .Banded, "Matrix must be in banded format")
+	assert(AFB.format == .Banded, "Factored matrix must be in banded format")
+
+	n := AB.cols
+	kl := AB.storage.banded.kl
+	ku := AB.storage.banded.ku
+	nrhs := B.cols
+	ldab := AB.ld
+	ldafb := AFB.ld
+	ldb := B.ld
+	ldx := X.ld
+	n_err_bnds := n_err_bnds
+
+	// Validate inputs
+	assert(len(ipiv) >= int(n), "Pivot array too small")
+	assert(len(R) >= int(n), "Row scale array too small")
+	assert(len(C) >= int(n), "Column scale array too small")
+	assert(len(berr) >= int(nrhs), "Backward error array too small")
+	assert(len(err_bnds_norm) >= int(nrhs * n_err_bnds), "Normwise error bounds array too small")
+	assert(
+		len(err_bnds_comp) >= int(nrhs * n_err_bnds),
+		"Componentwise error bounds array too small",
+	)
+	assert(len(params) >= 3, "Parameters array too small")
+	assert(len(work) >= 2 * int(n), "Work array too small")
+	assert(len(rwork) >= 2 * int(n), "Real work array too small")
+
+	fact_c := _factorization_to_char(fact)
+	trans_c := transpose_mode_to_cstring(trans)
+
+	// Convert equilibration enum to byte for LAPACK
+	equed_byte := equilibration_request_to_char(equed^)
+
+	// Set nparams
+	nparams := Blas_Int(len(params))
+
+	lapack.zgbsvxx_(
+		fact_c,
+		trans_c,
+		&n,
+		&kl,
+		&ku,
+		&nrhs,
+		raw_data(AB.data),
+		&ldab,
+		raw_data(AFB.data),
+		&ldafb,
+		raw_data(ipiv),
+		&equed_byte,
+		raw_data(R),
+		raw_data(C),
+		raw_data(B.data),
+		&ldb,
+		raw_data(X.data),
+		&ldx,
+		rcond,
+		rpvgrw,
+		raw_data(berr),
+		&n_err_bnds,
+		raw_data(err_bnds_norm),
+		raw_data(err_bnds_comp),
+		&nparams,
+		raw_data(params),
+		raw_data(work),
+		raw_data(rwork),
+		&info,
+		len(fact_c),
+		len(trans_c),
+		1,
+	)
+
+	// Convert byte back to equilibration enum
+	equed^ = equilibration_request_from_char(equed_byte)
+
+	return info, info == 0
 }

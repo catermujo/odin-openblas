@@ -24,35 +24,57 @@ Raw bindings are located in `c/` and `f77/`.
 
 All bindings are wrapped in `Matrix($T)` and `Vector($T)` providing a higher level interface than the raw bindings. You may use these, or just the raw bindings.
 
-The library currently allocates internally in the wrapped calls, though its my goal to redesign the api roughly as follows:
+## Usage
+
+The API requires pre-allocated arrays and separates workspace queries from computation:
 
 ```odin
-// Current Design (100% internal allocs)
-// LAPACK: sgesvd_ & cgesvd_
-m_svd_f32_c64 :: proc(
-	A: ^Matrix($T), // Input matrix (overwritten)
-	compute_u: bool = true,
-	compute_vt: bool = true,
-	full_matrices: bool = false,
-	allocator := context.allocator,
-) -> (
-	S: []f32,
-	U: Matrix(T),
-	VT: Matrix(T),
-	info: Info, 
-) where T == f32 || T == complex64
+package example
 
-// Planned Design (No to minimal internal allocs):
+import ob "../openblas"
 
-// Find the Optimal Workspace:
-bufReq := query_workspace_svd(&A, compute_u=true, compute_v=true) 
+// Example: Solve a banded linear system using LU factorization
+solve_banded_system :: proc() {
+    // Problem dimensions
+    n := 100      // Matrix size
+    kl := 2       // Lower bandwidth
+    ku := 3       // Upper bandwidth
+    nrhs := 1     // Number of right-hand sides
 
-buf:= make([]u8, bufReq) // user allocates
-defer delete(buf)
+    // Step 1: Query workspace and result sizes
+    ipiv_size := ob.query_result_sizes_solve_banded(n)
 
-U:Matrix(f64)
-VT:Matrix(f64)
-S:Vector(f64)
-// Make Compute Call:
-info, ok := m_svd(&A,&U,&VT,&S,compute_u=true, compute_v=true,&buf)
+    // Step 2: Allocate arrays
+    ipiv := make([]ob.Blas_Int, ipiv_size)
+    defer delete(ipiv)
+
+    // Step 3: Create banded matrix and right-hand side
+    AB := ob.create_banded_matrix(f64, n, n, kl, ku)
+    defer ob.destroy_matrix(&AB)
+
+    B := ob.create_matrix(f64, n, nrhs)
+    defer ob.destroy_matrix(&B)
+
+    // ... initialize AB and B with the data ...
+
+    // Step 4: Solve the system (AB is overwritten with LU factorization)
+    info, ok := ob.solve_banded(&AB, &B, ipiv)
+    if !ok {
+        fmt.printf("Solve failed with info = %d\n", info)
+        return
+    }
+
+    // Solution is now in B
+}
 ```
+
+### API Usage Patterns
+
+1. **Query Functions**: Call `query_workspace_*` and `query_result_sizes_*` first to determine workspace and result sizes
+2. **Pre-allocation**: Allocate all arrays before calling solve procedures
+3. **No Auto-allocation**: Procedures do not allocate memory internally
+
+
+## Accelerate Compatibility
+
+Mac is usually setup for LP32.. it can use ILP64, but the bindings have a `_64` suffix. We'll need to make a conditional foreign file that does this something along the lines of `USE_ACCERERATE && USE_ILP64{foriegn {...}}`

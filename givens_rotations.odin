@@ -155,8 +155,8 @@ create_givens_to_zero :: proc(a, b: $T) -> (cs, sn, r: T) where is_float(T) {
 // Pivoting type for plane rotations
 GivensPivot :: enum {
 	Variable, // "V" - Variable pivot (rotations between i and i+1)
-	Bottom,   // "B" - Bottom pivot (rotations with last row/column)
-	Top,      // "T" - Top pivot (rotations with first row/column)
+	Bottom, // "B" - Bottom pivot (rotations with last row/column)
+	Top, // "T" - Top pivot (rotations with first row/column)
 }
 
 pivot_to_cstring :: proc(pivot: GivensPivot) -> cstring {
@@ -173,7 +173,7 @@ pivot_to_cstring :: proc(pivot: GivensPivot) -> cstring {
 
 // Direction for applying rotations
 GivensDirection :: enum {
-	Forward,  // "F" - Forward (from first to last)
+	Forward, // "F" - Forward (from first to last)
 	Backward, // "B" - Backward (from last to first)
 }
 
@@ -191,14 +191,11 @@ direction_to_cstring :: proc(dir: GivensDirection) -> cstring {
 // This is more efficient than manual application for large sequences
 m_apply_givens_sequence :: proc(
 	A: ^Matrix($T),
-	c, s: []$RotType,  // Cosine and sine arrays
+	c, s: []$RotType, // Cosine and sine arrays
 	side: ReflectorSide = .Left,
 	pivot: GivensPivot = .Variable,
 	direction: GivensDirection = .Forward,
-) where (T == f32 && RotType == f32) ||
-        (T == f64 && RotType == f64) ||
-        (T == complex64 && RotType == f32) ||
-        (T == complex128 && RotType == f64) {
+) where (T == f32 && RotType == f32) || (T == f64 && RotType == f64) || (T == complex64 && RotType == f32) || (T == complex128 && RotType == f64) {
 	assert(len(c) == len(s), "Cosine and sine arrays must have same length")
 
 	m := A.rows
@@ -210,21 +207,65 @@ m_apply_givens_sequence :: proc(
 	direct_c := direction_to_cstring(direction)
 
 	when T == f32 {
-		lapack.slasr_(side_c, pivot_c, direct_c, &m, &n,
-		              raw_data(c), raw_data(s), raw_data(A.data), &lda,
-		              len(side_c), len(pivot_c), len(direct_c))
+		lapack.slasr_(
+			side_c,
+			pivot_c,
+			direct_c,
+			&m,
+			&n,
+			raw_data(c),
+			raw_data(s),
+			raw_data(A.data),
+			&lda,
+			len(side_c),
+			len(pivot_c),
+			len(direct_c),
+		)
 	} else when T == f64 {
-		lapack.dlasr_(side_c, pivot_c, direct_c, &m, &n,
-		              raw_data(c), raw_data(s), raw_data(A.data), &lda,
-		              len(side_c), len(pivot_c), len(direct_c))
+		lapack.dlasr_(
+			side_c,
+			pivot_c,
+			direct_c,
+			&m,
+			&n,
+			raw_data(c),
+			raw_data(s),
+			raw_data(A.data),
+			&lda,
+			len(side_c),
+			len(pivot_c),
+			len(direct_c),
+		)
 	} else when T == complex64 {
-		lapack.clasr_(side_c, pivot_c, direct_c, &m, &n,
-		              raw_data(c), raw_data(s), raw_data(A.data), &lda,
-		              len(side_c), len(pivot_c), len(direct_c))
+		lapack.clasr_(
+			side_c,
+			pivot_c,
+			direct_c,
+			&m,
+			&n,
+			raw_data(c),
+			raw_data(s),
+			raw_data(A.data),
+			&lda,
+			len(side_c),
+			len(pivot_c),
+			len(direct_c),
+		)
 	} else when T == complex128 {
-		lapack.zlasr_(side_c, pivot_c, direct_c, &m, &n,
-		              raw_data(c), raw_data(s), raw_data(A.data), &lda,
-		              len(side_c), len(pivot_c), len(direct_c))
+		lapack.zlasr_(
+			side_c,
+			pivot_c,
+			direct_c,
+			&m,
+			&n,
+			raw_data(c),
+			raw_data(s),
+			raw_data(A.data),
+			&lda,
+			len(side_c),
+			len(pivot_c),
+			len(direct_c),
+		)
 	}
 }
 

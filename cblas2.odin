@@ -14,21 +14,15 @@ import "base:intrinsics"
 // A can optionally be transposed or conjugate-transposed.
 // Result is stored in y, which is scaled by beta before adding the product.
 // Supported types: f32, f64, complex64, complex128
-mv_mul :: proc {
-	mv_mul_f32,
-	mv_mul_f64,
-	mv_mul_complex64,
-	mv_mul_complex128,
-}
-
-mv_mul_f32 :: proc(
-	A: ^Matrix(f32),
-	x: ^Vector(f32),
-	y: ^Vector(f32),
-	alpha: f32 = 1.0,
-	beta: f32 = 0.0,
-	trans: blas.CBLAS_TRANSPOSE = .NoTrans,
-) {
+mv_mul :: proc(
+	A: ^Matrix($T),
+	x: ^Vector(T),
+	y: ^Vector(T),
+	alpha: T,
+	beta: T,
+	trans: blas.CBLAS_TRANSPOSE,
+) where is_float(T) ||
+	is_complex(T) {
 	m, n := i64(A.rows), i64(A.cols)
 
 	// Adjust dimensions based on transpose
@@ -44,141 +38,71 @@ mv_mul_f32 :: proc(
 	incx := i64(x.incr)
 	incy := i64(y.incr)
 
-	blas.cblas_sgemv(
-		blas.CBLAS_ORDER.ColMajor,
-		trans,
-		m,
-		n,
-		alpha,
-		raw_data(A.data),
-		lda,
-		vector_data_ptr(x),
-		incx,
-		beta,
-		vector_data_ptr(y),
-		incy,
-	)
-}
-
-mv_mul_f64 :: proc(
-	A: ^Matrix(f64),
-	x: ^Vector(f64),
-	y: ^Vector(f64),
-	alpha: f64 = 1.0,
-	beta: f64 = 0.0,
-	trans: blas.CBLAS_TRANSPOSE = .NoTrans,
-) {
-	m, n := i64(A.rows), i64(A.cols)
-
-	// Adjust dimensions based on transpose
-	x_len, y_len := n, m
-	if trans != .NoTrans {
-		x_len, y_len = m, n
+	when T == f32 {
+		blas.cblas_sgemv(
+			blas.CBLAS_ORDER.ColMajor,
+			trans,
+			m,
+			n,
+			alpha,
+			raw_data(A.data),
+			lda,
+			vector_data_ptr(x),
+			incx,
+			beta,
+			vector_data_ptr(y),
+			incy,
+		)
+	} else when T == f64 {
+		blas.cblas_dgemv(
+			blas.CBLAS_ORDER.ColMajor,
+			trans,
+			m,
+			n,
+			alpha,
+			raw_data(A.data),
+			lda,
+			vector_data_ptr(x),
+			incx,
+			beta,
+			vector_data_ptr(y),
+			incy,
+		)
+	} else when T == complex64 {
+		alpha := alpha
+		beta := beta
+		blas.cblas_cgemv(
+			blas.CBLAS_ORDER.ColMajor,
+			trans,
+			m,
+			n,
+			&alpha,
+			raw_data(A.data),
+			lda,
+			vector_data_ptr(x),
+			incx,
+			&beta,
+			vector_data_ptr(y),
+			incy,
+		)
+	} else when T == complex128 {
+		alpha := alpha
+		beta := beta
+		blas.cblas_zgemv(
+			blas.CBLAS_ORDER.ColMajor,
+			trans,
+			m,
+			n,
+			&alpha,
+			raw_data(A.data),
+			lda,
+			vector_data_ptr(x),
+			incx,
+			&beta,
+			vector_data_ptr(y),
+			incy,
+		)
 	}
-
-	assert(x.size == x_len, "Input vector dimension must match matrix")
-	assert(y.size == y_len, "Output vector dimension must match matrix")
-
-	lda := i64(A.ld)
-	incx := i64(x.incr)
-	incy := i64(y.incr)
-
-	blas.cblas_dgemv(
-		blas.CBLAS_ORDER.ColMajor,
-		trans,
-		m,
-		n,
-		alpha,
-		raw_data(A.data),
-		lda,
-		vector_data_ptr(x),
-		incx,
-		beta,
-		vector_data_ptr(y),
-		incy,
-	)
-}
-
-mv_mul_complex64 :: proc(
-	A: ^Matrix(complex64),
-	x: ^Vector(complex64),
-	y: ^Vector(complex64),
-	alpha: complex64 = 1.0,
-	beta: complex64 = 0.0,
-	trans: blas.CBLAS_TRANSPOSE = .NoTrans,
-) {
-	m, n := i64(A.rows), i64(A.cols)
-
-	alpha := alpha
-	beta := beta
-
-	// Adjust dimensions based on transpose
-	x_len, y_len := n, m
-	if trans != .NoTrans {
-		x_len, y_len = m, n
-	}
-
-	assert(x.size == x_len, "Input vector dimension must match matrix")
-	assert(y.size == y_len, "Output vector dimension must match matrix")
-
-	lda := i64(A.ld)
-	incx := i64(x.incr)
-	incy := i64(y.incr)
-
-	blas.cblas_cgemv(
-		blas.CBLAS_ORDER.ColMajor,
-		trans,
-		m,
-		n,
-		&alpha,
-		raw_data(A.data),
-		lda,
-		vector_data_ptr(x),
-		incx,
-		&beta,
-		vector_data_ptr(y),
-		incy,
-	)
-}
-
-mv_mul_complex128 :: proc(
-	A: ^Matrix(complex128),
-	x: ^Vector(complex128),
-	y: ^Vector(complex128),
-	alpha: complex128 = 1.0,
-	beta: complex128 = 0.0,
-	trans: blas.CBLAS_TRANSPOSE = .NoTrans,
-) {
-	m, n := i64(A.rows), i64(A.cols)
-	alpha := alpha
-	beta := beta
-	// Adjust dimensions based on transpose
-	x_len, y_len := n, m
-	if trans != .NoTrans {
-		x_len, y_len = m, n
-	}
-
-	assert(x.size == x_len, "Input vector dimension must match matrix")
-	assert(y.size == y_len, "Output vector dimension must match matrix")
-
-	lda := i64(A.ld)
-	incx := i64(x.incr)
-	incy := i64(y.incr)
-
-	blas.cblas_zgemv(
-		blas.CBLAS_ORDER.ColMajor,
-		trans,
-		m,
-		n,
-		&alpha,
-		raw_data(A.data),
-		lda,
-		vector_data_ptr(x),
-		incx,
-		&beta,
-		vector_data_ptr(y),
-		incy,
-	)
 }
 
 // ===================================================================================
@@ -262,8 +186,6 @@ mv_ger :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for ger")
 	}
 }
 
@@ -349,8 +271,6 @@ mv_ger_conj :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for gerc")
 	}
 }
 
@@ -425,8 +345,6 @@ mv_trsv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for trsv")
 	}
 }
 
@@ -497,8 +415,6 @@ mv_trmv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for trmv")
 	}
 }
 
@@ -546,8 +462,6 @@ mv_syr :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for syr")
 	}
 }
 
@@ -594,8 +508,6 @@ mv_her :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for her")
 	}
 }
 
@@ -646,8 +558,6 @@ mv_syr2 :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for syr2")
 	}
 }
 
@@ -699,8 +609,6 @@ mv_her2 :: proc(
 			raw_data(A.data),
 			lda,
 		)
-	} else {
-		#panic("Unsupported type for her2")
 	}
 }
 
@@ -807,8 +715,6 @@ mv_gbmv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for gbmv")
 	}
 }
 
@@ -865,8 +771,6 @@ mv_sbmv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for sbmv")
 	}
 }
 
@@ -941,8 +845,6 @@ mv_tbmv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for tbmv")
 	}
 }
 
@@ -1017,8 +919,6 @@ mv_tbsv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for tbsv")
 	}
 }
 
@@ -1087,8 +987,6 @@ mv_tpmv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for tpmv")
 	}
 }
 
@@ -1153,8 +1051,6 @@ mv_tpsv :: proc(
 			vector_data_ptr(x),
 			incx,
 		)
-	} else {
-		#panic("Unsupported type for tpsv")
 	}
 }
 
@@ -1207,8 +1103,6 @@ mv_symv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for symv")
 	}
 }
 
@@ -1262,8 +1156,6 @@ mv_hemv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for hemv")
 	}
 }
 
@@ -1313,8 +1205,6 @@ mv_spmv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for spmv")
 	}
 }
 
@@ -1359,8 +1249,6 @@ mv_spr :: proc(
 			incx,
 			raw_data(Ap),
 		)
-	} else {
-		#panic("Unsupported type for spr")
 	}
 }
 
@@ -1404,8 +1292,6 @@ mv_hpr :: proc(
 			incx,
 			raw_data(Ap),
 		)
-	} else {
-		#panic("Unsupported type for hpr")
 	}
 }
 
@@ -1453,8 +1339,6 @@ mv_spr2 :: proc(
 			incy,
 			raw_data(Ap),
 		)
-	} else {
-		#panic("Unsupported type for spr2")
 	}
 }
 
@@ -1503,8 +1387,6 @@ mv_hpr2 :: proc(
 			incy,
 			raw_data(Ap),
 		)
-	} else {
-		#panic("Unsupported type for hpr2")
 	}
 }
 
@@ -1566,8 +1448,6 @@ mv_hbmv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for hbmv")
 	}
 }
 
@@ -1618,7 +1498,5 @@ mv_hpmv :: proc(
 			vector_data_ptr(y),
 			incy,
 		)
-	} else {
-		#panic("Unsupported type for hpmv")
 	}
 }

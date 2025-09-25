@@ -3,7 +3,7 @@ package openblas
 // ===================================================================================
 // ENUMS FOR ORTHOGONAL TRANSFORMATIONS
 // ===================================================================================
-
+QUERY_WORKSPACE: Blas_Int : -1
 // Side for orthogonal transformation
 OrthogonalSide :: enum {
 	Left, // 'L' - Multiply on the left (premultiply)
@@ -150,7 +150,7 @@ equilibration_request_from_char :: proc(c: byte) -> EquilibrationRequest {
 	panic("Unexpected char for Equilibriation")
 }
 
-// Convert enum to LAPACK equilibration character
+// Convert enum to LAPACK equilibration character string
 equilibration_request_to_cstring :: proc(e: EquilibrationRequest) -> cstring {
 	switch e {
 	case .None:
@@ -161,6 +161,21 @@ equilibration_request_to_cstring :: proc(e: EquilibrationRequest) -> cstring {
 		return "C"
 	case .Both:
 		return "B"
+	}
+	unreachable()
+}
+
+// Convert enum to LAPACK equilibration character byte
+equilibration_request_to_char :: proc(e: EquilibrationRequest) -> byte {
+	switch e {
+	case .None:
+		return 'N'
+	case .Row:
+		return 'R'
+	case .Column:
+		return 'C'
+	case .Both:
+		return 'B'
 	}
 	unreachable()
 }
@@ -199,7 +214,7 @@ transpose_from_char :: proc(c: byte) -> TransposeMode {
 	unreachable()
 }
 
-transpose_to_cstring :: proc(t: TransposeMode) -> cstring {
+transpose_mode_to_cstring :: proc(t: TransposeMode) -> cstring {
 	switch t {
 	case .None:
 		return "N"
@@ -331,6 +346,25 @@ _packing_to_cstring :: proc(pack: MatrixPacking) -> cstring {
 	}
 	unreachable()
 }
+
+// RFP (Rectangular Full Packed) format transpose options
+RFPTranspose :: enum {
+	NORMAL, // 'N' - Normal form
+	TRANSPOSE, // 'T' - Transpose form
+	CONJUGATE, // 'C' - Conjugate transpose (complex only)
+}
+
+rfp_transpose_to_cstring :: proc(trans: RFPTranspose) -> cstring {
+	switch trans {
+	case .NORMAL:
+		return "N"
+	case .TRANSPOSE:
+		return "T"
+	case .CONJUGATE:
+		return "C"
+	}
+	unreachable()
+}
 // ===================================================================================
 // MACHINE PARAMETERS
 // ===================================================================================
@@ -447,12 +481,15 @@ eigen_job_to_cstring :: proc(job: EigenJobOption) -> cstring {
 	unreachable()
 }
 
-// Range option for eigenvalue selection
+// Range option for eigenvalue/singular value selection
 EigenRangeOption :: enum {
-	ALL, // 'A' - All eigenvalues
-	VALUE, // 'V' - Eigenvalues in range [vl, vu]
-	INDEX, // 'I' - Eigenvalues with indices il to iu
+	ALL, // 'A' - All eigenvalues/singular values
+	VALUE, // 'V' - Eigenvalues/singular values in range [vl, vu]
+	INDEX, // 'I' - Eigenvalues/singular values with indices il to iu
 }
+
+// Alias for SVD functions (same selection mechanism)
+SVDRangeOption :: EigenRangeOption
 
 eigen_range_to_cstring :: proc(range: EigenRangeOption) -> cstring {
 	switch range {
@@ -465,6 +502,9 @@ eigen_range_to_cstring :: proc(range: EigenRangeOption) -> cstring {
 	}
 	unreachable()
 }
+
+// Alias for SVD (same conversion)
+svd_range_to_cstring :: eigen_range_to_cstring
 
 
 // ===================================================================================
