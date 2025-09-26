@@ -1131,7 +1131,7 @@ solve_expert_extra_c64 :: proc(
 	ldaf := AF.ld
 	ldx := X.ld
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(transpose)
 
 	// Convert EquilibrationRequest to byte for LAPACK
@@ -1143,7 +1143,7 @@ solve_expert_extra_c64 :: proc(
 	n_err_bnds_copy := n_err_bnds
 
 	lapack.cgesvxx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n_int,
 		&nrhs_int,
@@ -1170,7 +1170,7 @@ solve_expert_extra_c64 :: proc(
 		raw_data(work),
 		raw_data(rwork),
 		&info,
-		len(fact_c),
+		1,
 		len(trans_c),
 		1,
 	)
@@ -1229,7 +1229,7 @@ solve_expert_extra_c128 :: proc(
 	ldaf := AF.ld
 	ldx := X.ld
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(transpose)
 
 	// Convert EquilibrationRequest to byte for LAPACK
@@ -1241,7 +1241,7 @@ solve_expert_extra_c128 :: proc(
 	n_err_bnds := n_err_bnds
 
 	lapack.zgesvxx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n_int,
 		&nrhs_int,

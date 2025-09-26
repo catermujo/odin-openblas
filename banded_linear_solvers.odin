@@ -137,9 +137,9 @@ query_result_sizes_banded_pd_expert :: proc(
 ) -> (
 	S_size: int,
 	ferr_size: int,
-	berr_size: int,// Scaling factors array
-	rcond_size: int,// Forward error bounds array
-	equed_size: int, // Backward error bounds array// Reciprocal condition number (scalar)// Equilibration state (single byte)
+	berr_size: int,
+	rcond_size: int,
+	equed_size: int, // Scaling factors array// Forward error bounds array// Backward error bounds array// Reciprocal condition number (scalar)// Equilibration state (single byte)
 ) {
 	return n, nrhs, nrhs, 1, 1
 }
@@ -955,14 +955,14 @@ solve_banded_expert_c64 :: proc(
 	assert(len(work) >= 2 * int(n), "Work array too small")
 	assert(len(rwork) >= int(n), "Real work array too small")
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(trans)
 
 	// Convert equilibration enum to byte for LAPACK
 	equed_byte := equilibration_request_to_char(equed^)
 
 	lapack.cgbsvx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n,
 		&kl,
@@ -986,7 +986,7 @@ solve_banded_expert_c64 :: proc(
 		raw_data(work),
 		raw_data(rwork),
 		&info,
-		len(fact_c),
+		1,
 		len(trans_c),
 		1,
 	)
@@ -1039,14 +1039,14 @@ solve_banded_expert_c128 :: proc(
 	assert(len(work) >= 2 * int(n), "Work array too small")
 	assert(len(rwork) >= int(n), "Real work array too small")
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(trans)
 
 	// Convert equilibration enum to byte for LAPACK
 	equed_byte := equilibration_request_to_char(equed^)
 
 	lapack.zgbsvx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n,
 		&kl,
@@ -1070,7 +1070,7 @@ solve_banded_expert_c128 :: proc(
 		raw_data(work),
 		raw_data(rwork),
 		&info,
-		len(fact_c),
+		1,
 		len(trans_c),
 		1,
 	)
@@ -1332,7 +1332,7 @@ solve_banded_expert_extended_c64 :: proc(
 	assert(len(work) >= 2 * int(n), "Work array too small")
 	assert(len(rwork) >= 2 * int(n), "Real work array too small")
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(trans)
 
 	// Convert equilibration enum to byte for LAPACK
@@ -1342,7 +1342,7 @@ solve_banded_expert_extended_c64 :: proc(
 	nparams := Blas_Int(len(params))
 
 	lapack.cgbsvxx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n,
 		&kl,
@@ -1371,7 +1371,7 @@ solve_banded_expert_extended_c64 :: proc(
 		raw_data(work),
 		raw_data(rwork),
 		&info,
-		len(fact_c),
+		1,
 		len(trans_c),
 		1,
 	)
@@ -1434,7 +1434,7 @@ solve_banded_expert_extended_c128 :: proc(
 	assert(len(work) >= 2 * int(n), "Work array too small")
 	assert(len(rwork) >= 2 * int(n), "Real work array too small")
 
-	fact_c := _factorization_to_char(fact)
+	fact_c := factorization_to_char(fact)
 	trans_c := transpose_mode_to_cstring(trans)
 
 	// Convert equilibration enum to byte for LAPACK
@@ -1444,7 +1444,7 @@ solve_banded_expert_extended_c128 :: proc(
 	nparams := Blas_Int(len(params))
 
 	lapack.zgbsvxx_(
-		fact_c,
+		&fact_c,
 		trans_c,
 		&n,
 		&kl,
@@ -1473,7 +1473,7 @@ solve_banded_expert_extended_c128 :: proc(
 		raw_data(work),
 		raw_data(rwork),
 		&info,
-		len(fact_c),
+		1,
 		len(trans_c),
 		1,
 	)

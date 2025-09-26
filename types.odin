@@ -187,7 +187,7 @@ EquilibrationState :: enum {
 }
 
 // Convert equilibration state to LAPACK character
-_equilibration_state_to_char :: proc(equed: EquilibrationState) -> cstring {
+equilibration_state_to_cstring :: proc(equed: EquilibrationState) -> cstring {
 	switch equed {
 	case .None:
 		return "N"
@@ -271,7 +271,7 @@ FactorizationOption :: enum {
 }
 
 // Convert factorization option to LAPACK character
-_factorization_to_char :: proc(fact: FactorizationOption) -> cstring {
+factorization_to_cstring :: proc(fact: FactorizationOption) -> cstring {
 	switch fact {
 	case .Equilibrate:
 		return "E"
@@ -279,6 +279,17 @@ _factorization_to_char :: proc(fact: FactorizationOption) -> cstring {
 		return "N"
 	case .Factor:
 		return "F"
+	}
+	unreachable()
+}
+factorization_to_char :: proc(fact: FactorizationOption) -> byte {
+	switch fact {
+	case .Equilibrate:
+		return 'E'
+	case .NoFactorization:
+		return 'N'
+	case .Factor:
+		return 'F'
 	}
 	unreachable()
 }
