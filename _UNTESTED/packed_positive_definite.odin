@@ -71,17 +71,7 @@ m_condition_packed_positive_definite_c64 :: proc(
 	rcond_val: f32
 	info_val: Info
 
-	lapack.cppcon_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		&anorm,
-		&rcond_val,
-		raw_data(work),
-		raw_data(rwork),
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.cppcon_(uplo_c, &n_val, raw_data(AP), &anorm, &rcond_val, raw_data(work), raw_data(rwork), &info_val, len(uplo_c))
 
 	return rcond_val, info_val
 }
@@ -117,17 +107,7 @@ m_condition_packed_positive_definite_f64 :: proc(
 	rcond_val: f64
 	info_val: Info
 
-	lapack.dppcon_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		&anorm,
-		&rcond_val,
-		raw_data(work),
-		raw_data(iwork),
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.dppcon_(uplo_c, &n_val, raw_data(AP), &anorm, &rcond_val, raw_data(work), raw_data(iwork), &info_val, len(uplo_c))
 
 	return rcond_val, info_val
 }
@@ -163,17 +143,7 @@ m_condition_packed_positive_definite_f32 :: proc(
 	rcond_val: f32
 	info_val: Info
 
-	lapack.sppcon_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		&anorm,
-		&rcond_val,
-		raw_data(work),
-		raw_data(iwork),
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.sppcon_(uplo_c, &n_val, raw_data(AP), &anorm, &rcond_val, raw_data(work), raw_data(iwork), &info_val, len(uplo_c))
 
 	return rcond_val, info_val
 }
@@ -209,17 +179,7 @@ m_condition_packed_positive_definite_c128 :: proc(
 	rcond_val: f64
 	info_val: Info
 
-	lapack.zppcon_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		&anorm,
-		&rcond_val,
-		raw_data(work),
-		raw_data(rwork),
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.zppcon_(uplo_c, &n_val, raw_data(AP), &anorm, &rcond_val, raw_data(work), raw_data(rwork), &info_val, len(uplo_c))
 
 	return rcond_val, info_val
 }
@@ -256,16 +216,7 @@ m_equilibrate_packed_positive_definite_c64 :: proc(
 	amax_val: f32
 	info_val: Info
 
-	lapack.cppequ_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		raw_data(S),
-		&scond_val,
-		&amax_val,
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.cppequ_(uplo_c, &n_val, raw_data(AP), raw_data(S), &scond_val, &amax_val, &info_val, len(uplo_c))
 
 	// Handle error
 	if info_val > 0 {
@@ -304,16 +255,7 @@ m_equilibrate_packed_positive_definite_f64 :: proc(
 	amax_val: f64
 	info_val: Info
 
-	lapack.dppequ_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		raw_data(S),
-		&scond_val,
-		&amax_val,
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.dppequ_(uplo_c, &n_val, raw_data(AP), raw_data(S), &scond_val, &amax_val, &info_val, len(uplo_c))
 
 	// Handle error
 	if info_val > 0 {
@@ -352,16 +294,7 @@ m_equilibrate_packed_positive_definite_f32 :: proc(
 	amax_val: f32
 	info_val: Info
 
-	lapack.sppequ_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		raw_data(S),
-		&scond_val,
-		&amax_val,
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.sppequ_(uplo_c, &n_val, raw_data(AP), raw_data(S), &scond_val, &amax_val, &info_val, len(uplo_c))
 
 	// Handle error
 	if info_val > 0 {
@@ -400,16 +333,7 @@ m_equilibrate_packed_positive_definite_c128 :: proc(
 	amax_val: f64
 	info_val: Info
 
-	lapack.zppequ_(
-		uplo_c,
-		&n_val,
-		raw_data(AP),
-		raw_data(S),
-		&scond_val,
-		&amax_val,
-		&info_val,
-		len(uplo_c),
-	)
+	lapack.zppequ_(uplo_c, &n_val, raw_data(AP), raw_data(S), &scond_val, &amax_val, &info_val, len(uplo_c))
 
 	// Handle error
 	if info_val > 0 {
@@ -425,11 +349,7 @@ m_equilibrate_packed_positive_definite_c128 :: proc(
 // ===================================================================================
 
 // Create packed matrix from standard matrix
-create_packed_matrix :: proc(
-	A: ^Matrix($T),
-	uplo_upper := true,
-	allocator := context.allocator,
-) -> PackedMatrix(T) {
+create_packed_matrix :: proc(A: ^Matrix($T), uplo_upper := true, allocator := context.allocator) -> PackedMatrix(T) {
 	if A.rows != A.cols {
 		panic("Matrix must be square")
 	}
@@ -449,10 +369,7 @@ create_packed_matrix :: proc(
 }
 
 // Extract standard matrix from packed format
-extract_from_packed :: proc(
-	packed: ^PackedMatrix($T),
-	allocator := context.allocator,
-) -> Matrix(T) {
+extract_from_packed :: proc(packed: ^PackedMatrix($T), allocator := context.allocator) -> Matrix(T) {
 	A := create_matrix(T, packed.n, packed.n, allocator)
 
 	// Unpack the matrix
@@ -526,10 +443,7 @@ unpack_matrix :: proc(AP: []$T, A: ^Matrix(T), uplo_upper: bool) {
 }
 
 // Complete condition number analysis for packed matrix
-analyze_packed_condition :: proc(
-	packed: ^PackedMatrix($T),
-	allocator := context.allocator,
-) -> PackedConditionAnalysis {
+analyze_packed_condition :: proc(packed: ^PackedMatrix($T), allocator := context.allocator) -> PackedConditionAnalysis {
 	analysis: PackedConditionAnalysis
 
 	// First compute the norm of the packed matrix
@@ -553,40 +467,16 @@ analyze_packed_condition :: proc(
 
 	// Estimate condition number
 	when T == complex64 {
-		rcond, info := m_condition_packed_positive_definite_c64(
-			packed_factor,
-			packed.n,
-			f32(anorm),
-			packed.uplo_upper,
-			allocator,
-		)
+		rcond, info := m_condition_packed_positive_definite_c64(packed_factor, packed.n, f32(anorm), packed.uplo_upper, allocator)
 		analysis.rcond = f64(rcond)
 	} else when T == f64 {
-		rcond, info := m_condition_packed_positive_definite_f64(
-			packed_factor,
-			packed.n,
-			anorm,
-			packed.uplo_upper,
-			allocator,
-		)
+		rcond, info := m_condition_packed_positive_definite_f64(packed_factor, packed.n, anorm, packed.uplo_upper, allocator)
 		analysis.rcond = rcond
 	} else when T == f32 {
-		rcond, info := m_condition_packed_positive_definite_f32(
-			packed_factor,
-			packed.n,
-			f32(anorm),
-			packed.uplo_upper,
-			allocator,
-		)
+		rcond, info := m_condition_packed_positive_definite_f32(packed_factor, packed.n, f32(anorm), packed.uplo_upper, allocator)
 		analysis.rcond = f64(rcond)
 	} else when T == complex128 {
-		rcond, info := m_condition_packed_positive_definite_c128(
-			packed_factor,
-			packed.n,
-			anorm,
-			packed.uplo_upper,
-			allocator,
-		)
+		rcond, info := m_condition_packed_positive_definite_c128(packed_factor, packed.n, anorm, packed.uplo_upper, allocator)
 		analysis.rcond = rcond
 	}
 
@@ -615,52 +505,29 @@ PackedConditionAnalysis :: struct {
 }
 
 // Equilibrate packed matrix
-equilibrate_packed :: proc(
-	packed: ^PackedMatrix($T),
-	allocator := context.allocator,
-) -> PackedEquilibrationResult(T) {
+equilibrate_packed :: proc(packed: ^PackedMatrix($T), allocator := context.allocator) -> PackedEquilibrationResult(T) {
 	result: PackedEquilibrationResult(T)
 
 	when T == complex64 {
-		S, scond, amax, info := m_equilibrate_packed_positive_definite_c64(
-			packed.data,
-			packed.n,
-			packed.uplo_upper,
-			allocator,
-		)
+		S, scond, amax, info := m_equilibrate_packed_positive_definite_c64(packed.data, packed.n, packed.uplo_upper, allocator)
 		result.scale_factors = S
 		result.condition_scale = f64(scond)
 		result.max_element = f64(amax)
 		result.success = info == 0
 	} else when T == f64 {
-		S, scond, amax, info := m_equilibrate_packed_positive_definite_f64(
-			packed.data,
-			packed.n,
-			packed.uplo_upper,
-			allocator,
-		)
+		S, scond, amax, info := m_equilibrate_packed_positive_definite_f64(packed.data, packed.n, packed.uplo_upper, allocator)
 		result.scale_factors = S
 		result.condition_scale = scond
 		result.max_element = amax
 		result.success = info == 0
 	} else when T == f32 {
-		S, scond, amax, info := m_equilibrate_packed_positive_definite_f32(
-			packed.data,
-			packed.n,
-			packed.uplo_upper,
-			allocator,
-		)
+		S, scond, amax, info := m_equilibrate_packed_positive_definite_f32(packed.data, packed.n, packed.uplo_upper, allocator)
 		result.scale_factors = S
 		result.condition_scale = f64(scond)
 		result.max_element = f64(amax)
 		result.success = info == 0
 	} else when T == complex128 {
-		S, scond, amax, info := m_equilibrate_packed_positive_definite_c128(
-			packed.data,
-			packed.n,
-			packed.uplo_upper,
-			allocator,
-		)
+		S, scond, amax, info := m_equilibrate_packed_positive_definite_c128(packed.data, packed.n, packed.uplo_upper, allocator)
 		result.scale_factors = S
 		result.condition_scale = scond
 		result.max_element = amax

@@ -515,6 +515,72 @@ eigen_job_to_char :: proc(job: EigenJobOption) -> u8 {
 	}
 	unreachable()
 }
+
+
+// Eigenvector computation side specification
+EigenvectorSide :: enum {
+	Right, // Compute right eigenvectors only
+	Left, // Compute left eigenvectors only
+	Both, // Compute both left and right eigenvectors
+}
+
+// Eigenvector selection specification
+EigenvectorSelection :: enum {
+	All, // Compute all eigenvectors
+	Backtransform, // Backtransform using DTGEVC
+	Selected, // Compute selected eigenvectors
+}
+
+// Helper function to convert eigenvector side to string
+eigenvector_side_to_cstring :: proc(side: EigenvectorSide) -> cstring {
+	switch side {
+	case .Right:
+		return "R"
+	case .Left:
+		return "L"
+	case .Both:
+		return "B"
+	}
+	unreachable()
+}
+
+// Helper function to convert eigenvector selection to string
+eigenvector_selection_to_cstring :: proc(selection: EigenvectorSelection) -> cstring {
+	switch selection {
+	case .All:
+		return "A"
+	case .Backtransform:
+		return "B"
+	case .Selected:
+		return "S"
+	}
+	unreachable()
+}
+// Helper functions to convert enums to char
+eigenvector_side_to_char :: proc(side: EigenvectorSide) -> u8 {
+	switch side {
+	case .Right:
+		return 'R'
+	case .Left:
+		return 'L'
+	case .Both:
+		return 'B'
+	}
+	return 'B'
+}
+
+eigenvector_selection_to_char :: proc(selection: EigenvectorSelection) -> u8 {
+	switch selection {
+	case .All:
+		return 'A'
+	case .Backtransform:
+		return 'B'
+	case .Selected:
+		return 'S'
+	}
+	return 'A'
+}
+
 // Compz
 CompzOption :: enum {
 	None, // "N" - Eigenvalues only

@@ -1,14 +1,13 @@
 package openblas
 
 import lapack "./f77"
-import builtin "base:builtin"
 import "core:c"
 
 // Create a tridiagonal matrix using the unified Matrix type
-make_tridiagonal_matrix :: proc(T: typeid, n: int, allocator := context.allocator) -> Matrix(T) {
+make_tridiagonal_matrix :: proc($T: typeid, n: int, allocator := context.allocator) -> Matrix(T) {
 	// Allocate data: [dl(n-1) | d(n) | du(n-1)]
 	total_size := (n - 1) + n + (n - 1) // dl + d + du
-	data := builtin.make([]T, total_size, allocator)
+	data := make([]T, total_size, allocator)
 
 	return Matrix(T) {
 		data = data,
@@ -91,37 +90,9 @@ m_condition_tridiagonal_real :: proc(
 	defer builtin.delete(iwork)
 
 	when T == f32 {
-		lapack.sgtcon_(
-			norm_c,
-			&n,
-			raw_data(dl_factored),
-			raw_data(d_factored),
-			raw_data(du_factored),
-			raw_data(du2),
-			raw_data(ipiv),
-			&anorm,
-			&rcond,
-			raw_data(work),
-			raw_data(iwork),
-			&info,
-			1,
-		)
+		lapack.sgtcon_(norm_c, &n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &anorm, &rcond, raw_data(work), raw_data(iwork), &info, 1)
 	} else {
-		lapack.dgtcon_(
-			norm_c,
-			&n,
-			raw_data(dl_factored),
-			raw_data(d_factored),
-			raw_data(du_factored),
-			raw_data(du2),
-			raw_data(ipiv),
-			&anorm,
-			&rcond,
-			raw_data(work),
-			raw_data(iwork),
-			&info,
-			1,
-		)
+		lapack.dgtcon_(norm_c, &n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &anorm, &rcond, raw_data(work), raw_data(iwork), &info, 1)
 	}
 
 	return rcond, info
@@ -155,20 +126,7 @@ m_condition_tridiagonal_c64 :: proc(
 	work := builtin.make([]complex64, 2 * n, allocator)
 	defer builtin.delete(work)
 
-	lapack.cgtcon_(
-		norm_c,
-		&n,
-		raw_data(dl_factored),
-		raw_data(d_factored),
-		raw_data(du_factored),
-		raw_data(du2),
-		raw_data(ipiv),
-		&anorm,
-		&rcond,
-		raw_data(work),
-		&info,
-		1,
-	)
+	lapack.cgtcon_(norm_c, &n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &anorm, &rcond, raw_data(work), &info, 1)
 
 	return rcond, info
 }
@@ -201,20 +159,7 @@ m_condition_tridiagonal_c128 :: proc(
 	work := builtin.make([]complex128, 2 * n, allocator)
 	defer builtin.delete(work)
 
-	lapack.zgtcon_(
-		norm_c,
-		&n,
-		raw_data(dl_factored),
-		raw_data(d_factored),
-		raw_data(du_factored),
-		raw_data(du2),
-		raw_data(ipiv),
-		&anorm,
-		&rcond,
-		raw_data(work),
-		&info,
-		1,
-	)
+	lapack.zgtcon_(norm_c, &n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &anorm, &rcond, raw_data(work), &info, 1)
 
 	return rcond, info
 }
@@ -460,14 +405,7 @@ m_solve_tridiagonal :: proc {
 	m_solve_tridiagonal_c128,
 }
 
-m_solve_tridiagonal_real :: proc(
-	tri: ^TridiagonalMatrix($T),
-	B: ^Matrix(T),
-	allocator := context.allocator,
-) -> (
-	info: Info,
-) where T == f32 ||
-	T == f64 {
+m_solve_tridiagonal_real :: proc(tri: ^TridiagonalMatrix($T), B: ^Matrix(T), allocator := context.allocator) -> (info: Info) where T == f32 || T == f64 {
 	n := Blas_Int(tri.n)
 	nrhs := Blas_Int(B.cols)
 	ldb := Blas_Int(B.ld)
@@ -485,39 +423,15 @@ m_solve_tridiagonal_real :: proc(
 	copy(du_copy, tri.du)
 
 	when T == f32 {
-		lapack.sgtsv_(
-			&n,
-			&nrhs,
-			raw_data(dl_copy),
-			raw_data(d_copy),
-			raw_data(du_copy),
-			raw_data(B.data),
-			&ldb,
-			&info,
-		)
+		lapack.sgtsv_(&n, &nrhs, raw_data(dl_copy), raw_data(d_copy), raw_data(du_copy), raw_data(B.data), &ldb, &info)
 	} else {
-		lapack.dgtsv_(
-			&n,
-			&nrhs,
-			raw_data(dl_copy),
-			raw_data(d_copy),
-			raw_data(du_copy),
-			raw_data(B.data),
-			&ldb,
-			&info,
-		)
+		lapack.dgtsv_(&n, &nrhs, raw_data(dl_copy), raw_data(d_copy), raw_data(du_copy), raw_data(B.data), &ldb, &info)
 	}
 
 	return info
 }
 
-m_solve_tridiagonal_c64 :: proc(
-	tri: ^TridiagonalMatrix(complex64),
-	B: ^Matrix(complex64),
-	allocator := context.allocator,
-) -> (
-	info: Info,
-) {
+m_solve_tridiagonal_c64 :: proc(tri: ^TridiagonalMatrix(complex64), B: ^Matrix(complex64), allocator := context.allocator) -> (info: Info) {
 	n := Blas_Int(tri.n)
 	nrhs := Blas_Int(B.cols)
 	ldb := Blas_Int(B.ld)
@@ -534,27 +448,12 @@ m_solve_tridiagonal_c64 :: proc(
 	copy(d_copy, tri.d)
 	copy(du_copy, tri.du)
 
-	lapack.cgtsv_(
-		&n,
-		&nrhs,
-		raw_data(dl_copy),
-		raw_data(d_copy),
-		raw_data(du_copy),
-		raw_data(B.data),
-		&ldb,
-		&info,
-	)
+	lapack.cgtsv_(&n, &nrhs, raw_data(dl_copy), raw_data(d_copy), raw_data(du_copy), raw_data(B.data), &ldb, &info)
 
 	return info
 }
 
-m_solve_tridiagonal_c128 :: proc(
-	tri: ^TridiagonalMatrix(complex128),
-	B: ^Matrix(complex128),
-	allocator := context.allocator,
-) -> (
-	info: Info,
-) {
+m_solve_tridiagonal_c128 :: proc(tri: ^TridiagonalMatrix(complex128), B: ^Matrix(complex128), allocator := context.allocator) -> (info: Info) {
 	n := Blas_Int(tri.n)
 	nrhs := Blas_Int(B.cols)
 	ldb := Blas_Int(B.ld)
@@ -571,29 +470,13 @@ m_solve_tridiagonal_c128 :: proc(
 	copy(d_copy, tri.d)
 	copy(du_copy, tri.du)
 
-	lapack.zgtsv_(
-		&n,
-		&nrhs,
-		raw_data(dl_copy),
-		raw_data(d_copy),
-		raw_data(du_copy),
-		raw_data(B.data),
-		&ldb,
-		&info,
-	)
+	lapack.zgtsv_(&n, &nrhs, raw_data(dl_copy), raw_data(d_copy), raw_data(du_copy), raw_data(B.data), &ldb, &info)
 
 	return info
 }
 
 // Convenience function to solve Ax = b for vector b
-m_solve_tridiagonal_vector :: proc(
-	tri: ^Matrix($T),
-	b: []T,
-	allocator := context.allocator,
-) -> (
-	x: []T,
-	info: Info,
-) {
+m_solve_tridiagonal_vector :: proc(tri: ^Matrix($T), b: []T, allocator := context.allocator) -> (x: []T, info: Info) {
 	// Create matrix from vector
 	B := make_matrix(T, len(b), 1, allocator)
 	defer builtin.delete(B.data)
@@ -981,16 +864,7 @@ m_factor_tridiagonal :: proc {
 	m_factor_tridiagonal_c128,
 }
 
-m_factor_tridiagonal_real :: proc(
-	tri: ^Matrix($T),
-	allocator := context.allocator,
-) -> (
-	tri_factored: Matrix(T),
-	du2: []T,
-	ipiv: []i32,
-	info: Info,
-) where T == f32 ||
-	T == f64 {
+m_factor_tridiagonal_real :: proc(tri: ^Matrix($T), allocator := context.allocator) -> (tri_factored: Matrix(T), du2: []T, ipiv: []i32, info: Info) where T == f32 || T == f64 {
 	assert(tri.format == .Tridiagonal, "Matrix must be tridiagonal")
 	n := Blas_Int(tri.rows)
 
@@ -1013,39 +887,15 @@ m_factor_tridiagonal_real :: proc(
 	ipiv = builtin.make([]i32, n, allocator)
 
 	when T == f32 {
-		lapack.sgttrf_(
-			&n,
-			raw_data(dl_factored),
-			raw_data(d_factored),
-			raw_data(du_factored),
-			raw_data(du2),
-			raw_data(ipiv),
-			&info,
-		)
+		lapack.sgttrf_(&n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &info)
 	} else {
-		lapack.dgttrf_(
-			&n,
-			raw_data(dl_factored),
-			raw_data(d_factored),
-			raw_data(du_factored),
-			raw_data(du2),
-			raw_data(ipiv),
-			&info,
-		)
+		lapack.dgttrf_(&n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &info)
 	}
 
 	return tri_factored, du2, ipiv, info
 }
 
-m_factor_tridiagonal_c64 :: proc(
-	tri: ^Matrix(complex64),
-	allocator := context.allocator,
-) -> (
-	tri_factored: Matrix(complex64),
-	du2: []complex64,
-	ipiv: []i32,
-	info: Info,
-) {
+m_factor_tridiagonal_c64 :: proc(tri: ^Matrix(complex64), allocator := context.allocator) -> (tri_factored: Matrix(complex64), du2: []complex64, ipiv: []i32, info: Info) {
 	assert(tri.format == .Tridiagonal, "Matrix must be tridiagonal")
 	n := Blas_Int(tri.rows)
 
@@ -1067,28 +917,12 @@ m_factor_tridiagonal_c64 :: proc(
 	du2 = builtin.make([]complex64, n - 2, allocator)
 	ipiv = builtin.make([]i32, n, allocator)
 
-	lapack.cgttrf_(
-		&n,
-		raw_data(dl_factored),
-		raw_data(d_factored),
-		raw_data(du_factored),
-		raw_data(du2),
-		raw_data(ipiv),
-		&info,
-	)
+	lapack.cgttrf_(&n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &info)
 
 	return tri_factored, du2, ipiv, info
 }
 
-m_factor_tridiagonal_c128 :: proc(
-	tri: ^Matrix(complex128),
-	allocator := context.allocator,
-) -> (
-	tri_factored: Matrix(complex128),
-	du2: []complex128,
-	ipiv: []i32,
-	info: Info,
-) {
+m_factor_tridiagonal_c128 :: proc(tri: ^Matrix(complex128), allocator := context.allocator) -> (tri_factored: Matrix(complex128), du2: []complex128, ipiv: []i32, info: Info) {
 	assert(tri.format == .Tridiagonal, "Matrix must be tridiagonal")
 	n := Blas_Int(tri.rows)
 
@@ -1110,15 +944,7 @@ m_factor_tridiagonal_c128 :: proc(
 	du2 = builtin.make([]complex128, n - 2, allocator)
 	ipiv = builtin.make([]i32, n, allocator)
 
-	lapack.zgttrf_(
-		&n,
-		raw_data(dl_factored),
-		raw_data(d_factored),
-		raw_data(du_factored),
-		raw_data(du2),
-		raw_data(ipiv),
-		&info,
-	)
+	lapack.zgttrf_(&n, raw_data(dl_factored), raw_data(d_factored), raw_data(du_factored), raw_data(du2), raw_data(ipiv), &info)
 
 	return tri_factored, du2, ipiv, info
 }
@@ -1134,17 +960,7 @@ m_solve_tridiagonal_factored :: proc {
 	m_solve_tridiagonal_factored_c128,
 }
 
-m_solve_tridiagonal_factored_real :: proc(
-	tri_factored: ^Matrix($T),
-	du2: []T,
-	ipiv: []i32,
-	B: ^Matrix(T),
-	transpose: bool = false,
-	allocator := context.allocator,
-) -> (
-	info: Info,
-) where T == f32 ||
-	T == f64 {
+m_solve_tridiagonal_factored_real :: proc(tri_factored: ^Matrix($T), du2: []T, ipiv: []i32, B: ^Matrix(T), transpose: bool = false, allocator := context.allocator) -> (info: Info) where T == f32 || T == f64 {
 	assert(tri_factored.format == .Tridiagonal, "Matrix must be tridiagonal")
 	n := Blas_Int(tri_factored.rows)
 	nrhs := Blas_Int(B.cols)
@@ -1158,35 +974,9 @@ m_solve_tridiagonal_factored_real :: proc(
 	du := get_tridiagonal_du(tri_factored)
 
 	when T == f32 {
-		lapack.sgttrs_(
-			trans_c,
-			&n,
-			&nrhs,
-			raw_data(dl),
-			raw_data(d),
-			raw_data(du),
-			raw_data(du2),
-			raw_data(ipiv),
-			raw_data(B.data),
-			&ldb,
-			&info,
-			1,
-		)
+		lapack.sgttrs_(trans_c, &n, &nrhs, raw_data(dl), raw_data(d), raw_data(du), raw_data(du2), raw_data(ipiv), raw_data(B.data), &ldb, &info, 1)
 	} else {
-		lapack.dgttrs_(
-			trans_c,
-			&n,
-			&nrhs,
-			raw_data(dl),
-			raw_data(d),
-			raw_data(du),
-			raw_data(du2),
-			raw_data(ipiv),
-			raw_data(B.data),
-			&ldb,
-			&info,
-			1,
-		)
+		lapack.dgttrs_(trans_c, &n, &nrhs, raw_data(dl), raw_data(d), raw_data(du), raw_data(du2), raw_data(ipiv), raw_data(B.data), &ldb, &info, 1)
 	}
 
 	return info
@@ -1222,20 +1012,7 @@ m_solve_tridiagonal_factored_c64 :: proc(
 	d := get_tridiagonal_d(tri_factored)
 	du := get_tridiagonal_du(tri_factored)
 
-	lapack.cgttrs_(
-		trans_c,
-		&n,
-		&nrhs,
-		raw_data(dl),
-		raw_data(d),
-		raw_data(du),
-		raw_data(du2),
-		raw_data(ipiv),
-		raw_data(B.data),
-		&ldb,
-		&info,
-		1,
-	)
+	lapack.cgttrs_(trans_c, &n, &nrhs, raw_data(dl), raw_data(d), raw_data(du), raw_data(du2), raw_data(ipiv), raw_data(B.data), &ldb, &info, 1)
 
 	return info
 }
@@ -1270,20 +1047,7 @@ m_solve_tridiagonal_factored_c128 :: proc(
 	d := get_tridiagonal_d(tri_factored)
 	du := get_tridiagonal_du(tri_factored)
 
-	lapack.zgttrs_(
-		trans_c,
-		&n,
-		&nrhs,
-		raw_data(dl),
-		raw_data(d),
-		raw_data(du),
-		raw_data(du2),
-		raw_data(ipiv),
-		raw_data(B.data),
-		&ldb,
-		&info,
-		1,
-	)
+	lapack.zgttrs_(trans_c, &n, &nrhs, raw_data(dl), raw_data(d), raw_data(du), raw_data(du2), raw_data(ipiv), raw_data(B.data), &ldb, &info, 1)
 
 	return info
 }

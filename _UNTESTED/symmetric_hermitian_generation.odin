@@ -23,15 +23,7 @@ m_generate_random_symmetric :: proc {
 }
 
 // Generate random Hermitian matrix (c64)
-m_generate_random_hermitian_c64 :: proc(
-	A: ^Matrix(complex64),
-	D: []f32,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_hermitian_c64 :: proc(A: ^Matrix(complex64), D: []f32, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Hermitian {
 		panic("Matrix must be in Hermitian format")
@@ -84,15 +76,7 @@ m_generate_random_hermitian_c64 :: proc(
 }
 
 // Generate random Hermitian matrix (c128)
-m_generate_random_hermitian_c128 :: proc(
-	A: ^Matrix(complex128),
-	D: []f64,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_hermitian_c128 :: proc(A: ^Matrix(complex128), D: []f64, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Hermitian {
 		panic("Matrix must be in Hermitian format")
@@ -145,15 +129,7 @@ m_generate_random_hermitian_c128 :: proc(
 }
 
 // Generate random symmetric matrix (c64)
-m_generate_random_symmetric_c64 :: proc(
-	A: ^Matrix(complex64),
-	D: []f32,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_symmetric_c64 :: proc(A: ^Matrix(complex64), D: []f32, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Symmetric {
 		panic("Matrix must be in symmetric format")
@@ -206,15 +182,7 @@ m_generate_random_symmetric_c64 :: proc(
 }
 
 // Generate random symmetric matrix (f64)
-m_generate_random_symmetric_f64 :: proc(
-	A: ^Matrix(f64),
-	D: []f64,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_symmetric_f64 :: proc(A: ^Matrix(f64), D: []f64, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Symmetric {
 		panic("Matrix must be in symmetric format")
@@ -267,15 +235,7 @@ m_generate_random_symmetric_f64 :: proc(
 }
 
 // Generate random symmetric matrix (f32)
-m_generate_random_symmetric_f32 :: proc(
-	A: ^Matrix(f32),
-	D: []f32,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_symmetric_f32 :: proc(A: ^Matrix(f32), D: []f32, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Symmetric {
 		panic("Matrix must be in symmetric format")
@@ -328,15 +288,7 @@ m_generate_random_symmetric_f32 :: proc(
 }
 
 // Generate random symmetric matrix (c128)
-m_generate_random_symmetric_c128 :: proc(
-	A: ^Matrix(complex128),
-	D: []f64,
-	seed: []int = nil,
-	allocator := context.allocator,
-) -> (
-	success: bool,
-	info: Info,
-) {
+m_generate_random_symmetric_c128 :: proc(A: ^Matrix(complex128), D: []f64, seed: []int = nil, allocator := context.allocator) -> (success: bool, info: Info) {
 	// Validate matrix
 	if A.format != .Symmetric {
 		panic("Matrix must be in symmetric format")

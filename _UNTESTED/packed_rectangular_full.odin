@@ -314,18 +314,7 @@ m_solve_rfp_c64 :: proc(
 	ldb := Blas_Int(B.stride)
 	info_val: Info
 
-	lapack.cpftrs_(
-		transr_c,
-		uplo_c,
-		&n_val,
-		&nrhs_val,
-		raw_data(A),
-		cast(^complex64)B.data,
-		&ldb,
-		&info_val,
-		len(transr_c),
-		len(uplo_c),
-	)
+	lapack.cpftrs_(transr_c, uplo_c, &n_val, &nrhs_val, raw_data(A), cast(^complex64)B.data, &ldb, &info_val, len(transr_c), len(uplo_c))
 
 	return info_val == 0, info_val
 }
@@ -359,18 +348,7 @@ m_solve_rfp_f64 :: proc(
 	ldb := Blas_Int(B.stride)
 	info_val: Info
 
-	lapack.dpftrs_(
-		transr_c,
-		uplo_c,
-		&n_val,
-		&nrhs_val,
-		raw_data(A),
-		cast(^f64)B.data,
-		&ldb,
-		&info_val,
-		len(transr_c),
-		len(uplo_c),
-	)
+	lapack.dpftrs_(transr_c, uplo_c, &n_val, &nrhs_val, raw_data(A), cast(^f64)B.data, &ldb, &info_val, len(transr_c), len(uplo_c))
 
 	return info_val == 0, info_val
 }
@@ -404,18 +382,7 @@ m_solve_rfp_f32 :: proc(
 	ldb := Blas_Int(B.stride)
 	info_val: Info
 
-	lapack.spftrs_(
-		transr_c,
-		uplo_c,
-		&n_val,
-		&nrhs_val,
-		raw_data(A),
-		cast(^f32)B.data,
-		&ldb,
-		&info_val,
-		len(transr_c),
-		len(uplo_c),
-	)
+	lapack.spftrs_(transr_c, uplo_c, &n_val, &nrhs_val, raw_data(A), cast(^f32)B.data, &ldb, &info_val, len(transr_c), len(uplo_c))
 
 	return info_val == 0, info_val
 }
@@ -449,18 +416,7 @@ m_solve_rfp_c128 :: proc(
 	ldb := Blas_Int(B.stride)
 	info_val: Info
 
-	lapack.zpftrs_(
-		transr_c,
-		uplo_c,
-		&n_val,
-		&nrhs_val,
-		raw_data(A),
-		cast(^complex128)B.data,
-		&ldb,
-		&info_val,
-		len(transr_c),
-		len(uplo_c),
-	)
+	lapack.zpftrs_(transr_c, uplo_c, &n_val, &nrhs_val, raw_data(A), cast(^complex128)B.data, &ldb, &info_val, len(transr_c), len(uplo_c))
 
 	return info_val == 0, info_val
 }
@@ -478,12 +434,7 @@ RFPMatrix :: struct($T: typeid) {
 }
 
 // Create RFP matrix from standard matrix
-create_rfp_matrix :: proc(
-	A: ^Matrix($T),
-	transr := RFPTranspose.Normal,
-	uplo_upper := true,
-	allocator := context.allocator,
-) -> RFPMatrix(T) {
+create_rfp_matrix :: proc(A: ^Matrix($T), transr := RFPTranspose.Normal, uplo_upper := true, allocator := context.allocator) -> RFPMatrix(T) {
 	if A.rows != A.cols {
 		panic("Matrix must be square for RFP format")
 	}
@@ -566,49 +517,19 @@ cholesky_invert_rfp :: proc(
 }
 
 // Factor only (for reuse in solving systems)
-factor_rfp :: proc(
-	A: ^Matrix($T),
-	allocator := context.allocator,
-) -> (
-	rfp_factor: RFPMatrix(T),
-	success: bool,
-) {
+factor_rfp :: proc(A: ^Matrix($T), allocator := context.allocator) -> (rfp_factor: RFPMatrix(T), success: bool) {
 	// Convert to RFP format
 	rfp_factor = create_rfp_matrix(A, .Normal, true, allocator)
 
 	// Factor the matrix
 	when T == complex64 {
-		success, _ := m_cholesky_rfp_c64(
-			rfp_factor.data,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_cholesky_rfp_c64(rfp_factor.data, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 	} else when T == f64 {
-		success, _ := m_cholesky_rfp_f64(
-			rfp_factor.data,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_cholesky_rfp_f64(rfp_factor.data, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 	} else when T == f32 {
-		success, _ := m_cholesky_rfp_f32(
-			rfp_factor.data,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_cholesky_rfp_f32(rfp_factor.data, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 	} else when T == complex128 {
-		success, _ := m_cholesky_rfp_c128(
-			rfp_factor.data,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_cholesky_rfp_c128(rfp_factor.data, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 	} else {
 		panic("Unsupported type for RFP factorization")
 	}
@@ -621,51 +542,19 @@ factor_rfp :: proc(
 }
 
 // Solve linear system using pre-factored RFP matrix
-solve_with_rfp_factor :: proc(
-	rfp_factor: ^RFPMatrix($T),
-	B: ^Matrix(T),
-	allocator := context.allocator,
-) -> bool {
+solve_with_rfp_factor :: proc(rfp_factor: ^RFPMatrix($T), B: ^Matrix(T), allocator := context.allocator) -> bool {
 	// Use the appropriate solve function
 	when T == complex64 {
-		success, _ := m_solve_rfp_c64(
-			rfp_factor.data,
-			B,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_solve_rfp_c64(rfp_factor.data, B, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 		return success
 	} else when T == f64 {
-		success, _ := m_solve_rfp_f64(
-			rfp_factor.data,
-			B,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_solve_rfp_f64(rfp_factor.data, B, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 		return success
 	} else when T == f32 {
-		success, _ := m_solve_rfp_f32(
-			rfp_factor.data,
-			B,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_solve_rfp_f32(rfp_factor.data, B, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 		return success
 	} else when T == complex128 {
-		success, _ := m_solve_rfp_c128(
-			rfp_factor.data,
-			B,
-			rfp_factor.n,
-			rfp_factor.transr,
-			rfp_factor.uplo_upper,
-			allocator,
-		)
+		success, _ := m_solve_rfp_c128(rfp_factor.data, B, rfp_factor.n, rfp_factor.transr, rfp_factor.uplo_upper, allocator)
 		return success
 	} else {
 		panic("Unsupported type for RFP solve")
@@ -720,13 +609,7 @@ convert_to_rfp :: proc(A: ^Matrix($T), rfp: []T, n: int, transr: RFPTranspose, u
 }
 
 // Extract RFP format to standard matrix (simplified implementation)
-extract_rfp_to_matrix :: proc(
-	rfp: []$T,
-	A: ^Matrix(T),
-	n: int,
-	transr: RFPTranspose,
-	uplo_upper: bool,
-) {
+extract_rfp_to_matrix :: proc(rfp: []$T, A: ^Matrix(T), n: int, transr: RFPTranspose, uplo_upper: bool) {
 	// Simplified extraction - actual RFP layout is complex
 	idx := 0
 	if uplo_upper {
