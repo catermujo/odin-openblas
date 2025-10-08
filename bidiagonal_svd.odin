@@ -3,38 +3,6 @@ package openblas
 import lapack "./f77"
 
 // ===================================================================================
-// BIDIAGONAL MATRIX TYPE
-// ===================================================================================
-
-// Bidiagonal matrix representation for SVD computations
-// Stores only the diagonal and one off-diagonal (2n-1 elements total)
-Bidiagonal :: struct($T: typeid) {
-	n:    Blas_Int, // Matrix dimension (n x n)
-	uplo: UpLo, // Upper or Lower bidiagonal
-	d:    []T, // Main diagonal (length n)
-	e:    []T, // Off-diagonal (length n-1)
-	// If uplo='U': superdiagonal
-	// If uplo='L': subdiagonal
-}
-
-make_bidiagonal :: proc($T: typeid, n: int, uplo: UpLo = .Upper, allocator := context.allocator) -> Bidiagonal(T) {
-	return Bidiagonal(T){n = Blas_Int(n), uplo = uplo, d = make([]T, n, allocator), e = make([]T, max(0, n - 1), allocator)}
-}
-
-// Delete bidiagonal matrix
-delete_bidiagonal :: proc(B: ^Bidiagonal($T)) {
-	delete(B.d)
-	delete(B.e)
-}
-
-bidiagonal_from_arrays :: proc($T: typeid, d: []T, e: []T, uplo: UpLo = .Upper) -> Bidiagonal(T) {
-	assert(len(d) > 0, "Main diagonal must have at least one element")
-	assert(len(e) == len(d) - 1, "Off-diagonal must have n-1 elements")
-
-	return Bidiagonal(T){n = Blas_Int(len(d)), uplo = uplo, d = d, e = e}
-}
-
-// ===================================================================================
 // BIDIAGONAL SVD OPERATIONS
 // ===================================================================================
 
@@ -234,10 +202,11 @@ bidi_svd_dc :: proc(B: ^Bidiagonal($T), U: ^Matrix(T), VT: ^Matrix(T), work: []T
 // ===================================================================================
 
 // Query workspace size for selective bidiagonal SVD (bdsvdx)
-query_workspace_bidi_svd_select :: proc(n: int) -> (work_size: int, iwork_size: int) {
+query_workspace_bidi_svd_select :: proc(B: ^Bidiagonal($T)) -> (work_size: int, iwork_size: int) where is_float(T) {
 	// Based on LAPACK documentation for sbdsvdx/dbdsvdx
 	// WORK dimension: 14*N
 	// IWORK dimension: 12*N
+	n := int(B.n)
 	work_size = 14 * n
 	iwork_size = 12 * n
 	return
@@ -291,144 +260,6 @@ bidi_svd_select :: proc(
 
 
 // ===================================================================================
-// BIDIAGONAL REDUCTION
-// Reduce general matrix to bidiagonal form for SVD computation
-// ===================================================================================
-
-// Reduce general matrix to bidiagonal form using Householder reflections
-// A = Q * B * P^H where B is bidiagonal
-m_bidiagonalize :: proc {
-	m_bidiagonalize_real,
-	m_bidiagonalize_c64,
-	m_bidiagonalize_c128,
-}
-// FIXME: breaks from non-allocating pattern
-m_bidiagonalize_real :: proc(
-	A: ^Matrix($T), // General matrix (overwritten with bidiagonal form)
-	allocator := context.allocator,
-) -> (
-	D: []T,
-	E: []T,
-	tauq: []T,
-	taup: []T,
-	info: Info, // Diagonal elements of B// Off-diagonal elements of B// Scalar factors for Q// Scalar factors for P
-) where is_float(T) {
-	m := A.rows
-	n := A.cols
-	lda := A.ld
-	min_mn := min(m, n)
-
-	D = make([]T, min_mn, allocator)
-	E = make([]T, min_mn - 1, allocator)
-	tauq = make([]T, min_mn, allocator)
-	taup = make([]T, min_mn, allocator)
-
-	// Query for optimal workspace
-	lwork := Blas_Int(-1)
-	work_query: T
-
-	when T == f32 {
-		lapack.sgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), &work_query, &lwork, &info)
-
-		// Allocate workspace
-		lwork = Blas_Int(work_query)
-		work := make([]T, lwork, allocator)
-		defer delete(work)
-
-		// Perform reduction
-		lapack.sgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), raw_data(work), &lwork, &info)
-	} else when T == f64 {
-		lapack.dgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), &work_query, &lwork, &info)
-
-		// Allocate workspace
-		lwork = Blas_Int(work_query)
-		work := make([]T, lwork, allocator)
-		defer delete(work)
-
-		// Perform reduction
-		lapack.dgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), raw_data(work), &lwork, &info)
-	}
-
-	return D, E, tauq, taup, info
-}
-// FIXME: can merge complex types
-m_bidiagonalize_c64 :: proc(
-	A: ^Matrix(complex64),
-	allocator := context.allocator,
-) -> (
-	D: []f32,
-	E: []f32,
-	tau_q: []complex64,
-	tau_p: []complex64,
-	info: Info, // Real diagonal elements// Real off-diagonal elements// Scalar factors for Q// Scalar factors for P
-) {
-	m := A.rows
-	n := A.cols
-	lda := A.ld
-	min_mn := min(m, n)
-
-	// Allocate output arrays
-	D = make([]f32, min_mn, allocator)
-	E = make([]f32, min_mn - 1, allocator)
-	tau_q = make([]complex64, min_mn, allocator)
-	tau_p = make([]complex64, min_mn, allocator)
-
-	// Query for optimal workspace
-	lwork := Blas_Int(-1)
-	work_query: complex64
-
-	lapack.cgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tau_q), raw_data(tau_p), &work_query, &lwork, &info)
-
-	// Allocate workspace
-	lwork = Blas_Int(real(work_query))
-	work := make([]complex64, lwork, allocator)
-	defer delete(work)
-
-	// Perform reduction
-	lapack.cgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tau_q), raw_data(tau_p), raw_data(work), &lwork, &info)
-
-	return D, E, tau_q, tau_p, info
-}
-
-m_bidiagonalize_c128 :: proc(
-	A: ^Matrix(complex128),
-	allocator := context.allocator,
-) -> (
-	D: []f64,
-	E: []f64,
-	tauq: []complex128,
-	taup: []complex128,
-	info: Info, // Real diagonal elements// Real off-diagonal elements// Scalar factors for Q// Scalar factors for P
-) {
-	m := A.rows
-	n := A.cols
-	lda := A.ld
-	min_mn := min(m, n)
-
-	// Allocate output arrays
-	D = make([]f64, min_mn, allocator)
-	E = make([]f64, min_mn - 1, allocator)
-	tauq = make([]complex128, min_mn, allocator)
-	taup = make([]complex128, min_mn, allocator)
-
-	// Query for optimal workspace
-	lwork := Blas_Int(-1)
-	work_query: complex128
-
-	lapack.zgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), &work_query, &lwork, &info)
-
-	// Allocate workspace
-	lwork = Blas_Int(real(work_query))
-	work := make([]complex128, lwork, allocator)
-	defer delete(work)
-
-	// Perform reduction
-	lapack.zgebrd_(&m, &n, raw_data(A.data), &lda, raw_data(D), raw_data(E), raw_data(tauq), raw_data(taup), raw_data(work), &lwork, &info)
-
-	return D, E, tauq, taup, info
-}
-
-// ===================================================================================
 // CS (COSINE-SINE) DECOMPOSITION FOR BIDIAGONAL-BLOCK MATRICES
 // ===================================================================================
 
@@ -439,9 +270,10 @@ CS_Job :: enum u8 {
 }
 
 // Structure for CS decomposition workspace and parameter arrays
+// Note: phi field reserved for future 2-by-1 CS decomposition (ORCSD2BY1)
 CS_Arrays :: struct($T: typeid) where is_float(T) || is_complex(T) {
 	theta: []T, // Angle arrays for CS decomposition
-	phi:   []T, // Additional angle arrays
+	phi:   []T, // Additional angle arrays (reserved for ORCSD2BY1)
 	work:  []T, // Workspace for computation
 	rwork: []T, // Real workspace (for complex types)
 	iwork: []Blas_Int, // Integer workspace
@@ -519,7 +351,6 @@ cs_decomp_real :: proc(
 	X21: ^Matrix(T), // Lower-left block (n-p x q)
 	X22: ^Matrix(T), // Lower-right block (n-p x m-q)
 	theta: []T, // Angle array (output, length min(p,q))
-	phi: []T, // Angle array (output, length min(p,q)-1)
 	U1: ^Matrix(T), // Left orthogonal matrix (p x p)
 	U2: ^Matrix(T), // Left orthogonal matrix ((n-p) x (n-p))
 	V1T: ^Matrix(T), // Right orthogonal matrix (q x q)
@@ -614,20 +445,8 @@ cs_decomp_real :: proc(
 	lwork := Blas_Int(len(work))
 
 	when T == f32 {
-		if phi != nil && len(phi) > 0 {
-			// Use SORCSD2BY1 for extended CS decomposition with phi
-			assert(len(phi) >= int(max(0, min(p, q) - 1)), "Phi array too small")
-			// Note: This is a placeholder - actual implementation would need SORCSD2BY1
-			// For now, use regular SORCSD and ignore phi
-			// FIXME
-		}
 		lapack.sorcsd_(&jobu1, &jobu2, &jobv1t, &jobv2t, u8('N'), u8('N'), &m, &p, &q, raw_data(X11.data), &ldx11, x12_ptr, &ldx12, x21_ptr, &ldx21, x22_ptr, &ldx22, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1t_ptr, &ldv1t, v2t_ptr, &ldv2t, raw_data(work), &lwork, &info)
 	} else when T == f64 {
-		if phi != nil && len(phi) > 0 {
-			// Use DORCSD2BY1 for extended CS decomposition with phi
-			assert(len(phi) >= int(max(0, min(p, q) - 1)), "Phi array too small")
-			// Note: This is a placeholder - actual implementation would need DORCSD2BY1
-		}
 		lapack.dorcsd_(&jobu1, &jobu2, &jobv1t, &jobv2t, u8('N'), u8('N'), &m, &p, &q, raw_data(X11.data), &ldx11, x12_ptr, &ldx12, x21_ptr, &ldx21, x22_ptr, &ldx22, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1t_ptr, &ldv1t, v2t_ptr, &ldv2t, raw_data(work), &lwork, &info)
 	}
 
@@ -641,7 +460,6 @@ cs_decomp_complex :: proc(
 	X21: ^Matrix(T), // Lower-left block (n-p x q)
 	X22: ^Matrix(T), // Lower-right block (n-p x m-q)
 	theta: []$Real, // Real angle array (output, length min(p,q))
-	phi: []Real, // Real angle array (output, length min(p,q)-1)
 	U1: ^Matrix(T), // Left unitary matrix (p x p)
 	U2: ^Matrix(T), // Left unitary matrix ((n-p) x (n-p))
 	V1H: ^Matrix(T), // Right unitary matrix (q x q)
@@ -740,12 +558,6 @@ cs_decomp_complex :: proc(
 	lrwork := Blas_Int(len(rwork))
 
 	when T == complex64 {
-		if phi != nil && len(phi) > 0 {
-			// FIXME
-			// Use CUNCSD2BY1 for extended CS decomposition with phi
-			assert(len(phi) >= int(max(0, min(p, q) - 1)), "Phi array too small")
-			// Note: This is a placeholder - actual implementation would need CUNCSD2BY1
-		}
 		lapack.cuncsd_(
 			&jobu1,
 			&jobu2,
@@ -780,11 +592,6 @@ cs_decomp_complex :: proc(
 			&info,
 		)
 	} else when T == complex128 {
-		if phi != nil && len(phi) > 0 {
-			// Use ZUNCSD2BY1 for extended CS decomposition with phi
-			assert(len(phi) >= int(max(0, min(p, q) - 1)), "Phi array too small")
-			// Note: This is a placeholder - actual implementation would need ZUNCSD2BY1
-		}
 		lapack.zuncsd_(
 			&jobu1,
 			&jobu2,
@@ -818,6 +625,171 @@ cs_decomp_complex :: proc(
 			&lrwork,
 			&info,
 		)
+	}
+
+	return info, info == 0
+}
+
+// ===================================================================================
+// 2-BY-1 CS DECOMPOSITION (ORCSD2BY1)
+// For matrices with 2 vertical blocks only
+// ===================================================================================
+
+// 2-by-1 CS decomposition
+cs_decomp_2by1 :: proc {
+	cs_decomp_2by1_real,
+	cs_decomp_2by1_complex,
+}
+// Query workspace for 2-by-1 CS decomposition
+query_workspace_cs_decomp_2by1 :: proc(p, q: int) -> (work: int, iwork: int) {
+	// Based on LAPACK documentation for ORCSD2BY1
+	min_pq := min(p, q)
+	work = max(1, min_pq * min_pq + 8 * min_pq)
+	iwork = min_pq
+	return
+}
+
+// Real 2-by-1 CS decomposition (f32/f64)
+cs_decomp_2by1_real :: proc(
+	X11: ^Matrix($T), // Upper block (p x q)
+	X21: ^Matrix(T), // Lower block ((m-p) x q)
+	theta: []T, // Angle array (output, length min(p,q))
+	U1: ^Matrix(T), // Left orthogonal matrix (p x p) - optional
+	U2: ^Matrix(T), // Left orthogonal matrix ((m-p) x (m-p)) - optional
+	V1T: ^Matrix(T), // Right orthogonal matrix (q x q) - optional
+	work: []T, // Workspace
+	iwork: []Blas_Int, // Integer workspace
+) -> (
+	info: Info,
+	ok: bool,
+) where is_float(T) {
+	// Validate X11
+	p := X11.rows
+	q := X11.cols
+	ldx11 := X11.ld
+
+	// Validate X21
+	assert(X21 != nil, "X21 must not be nil for 2-by-1 CS decomposition")
+	assert(X21.cols == q, "X21 must have same number of columns as X11")
+	m := p + X21.rows
+	ldx21 := X21.ld
+
+	// Orthogonal matrix dimensions and pointers
+	ldu1 := Blas_Int(1)
+	u1_ptr: ^T = nil
+	if U1 != nil {
+		ldu1 = U1.ld
+		u1_ptr = raw_data(U1.data)
+		assert(U1.rows >= p && U1.cols >= p, "U1 matrix dimensions incorrect")
+	}
+
+	ldu2 := Blas_Int(1)
+	u2_ptr: ^T = nil
+	if U2 != nil {
+		ldu2 = U2.ld
+		u2_ptr = raw_data(U2.data)
+		assert(U2.rows >= (m - p) && U2.cols >= (m - p), "U2 matrix dimensions incorrect")
+	}
+
+	ldv1t := Blas_Int(1)
+	v1t_ptr: ^T = nil
+	if V1T != nil {
+		ldv1t = V1T.ld
+		v1t_ptr = raw_data(V1T.data)
+		assert(V1T.rows >= q && V1T.cols >= q, "V1T matrix dimensions incorrect")
+	}
+
+	// Job characters
+	jobu1 := u8('N')
+	jobu2 := u8('N')
+	jobv1t := u8('N')
+
+	if U1 != nil do jobu1 = u8('Y')
+	if U2 != nil do jobu2 = u8('Y')
+	if V1T != nil do jobv1t = u8('Y')
+
+	assert(len(theta) >= int(min(p, q)), "Theta array too small")
+
+	lwork := Blas_Int(len(work))
+
+	when T == f32 {
+		lapack.sorcsd2by1_(&jobu1, &jobu2, &jobv1t, &m, &p, &q, raw_data(X11.data), &ldx11, raw_data(X21.data), &ldx21, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1t_ptr, &ldv1t, raw_data(work), &lwork, raw_data(iwork), &info)
+	} else when T == f64 {
+		lapack.dorcsd2by1_(&jobu1, &jobu2, &jobv1t, &m, &p, &q, raw_data(X11.data), &ldx11, raw_data(X21.data), &ldx21, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1t_ptr, &ldv1t, raw_data(work), &lwork, raw_data(iwork), &info)
+	}
+
+	return info, info == 0
+}
+
+// Complex 2-by-1 CS decomposition (complex64/complex128)
+cs_decomp_2by1_complex :: proc(
+	X11: ^Matrix($Cmplx), // Upper block (p x q)
+	X21: ^Matrix(Cmplx), // Lower block ((m-p) x q)
+	theta: []$Real, // Real angle array (output, length min(p,q))
+	U1: ^Matrix(Cmplx), // Left unitary matrix (p x p) - optional
+	U2: ^Matrix(Cmplx), // Left unitary matrix ((m-p) x (m-p)) - optional
+	V1H: ^Matrix(Cmplx), // Right unitary matrix (q x q) - optional
+	work: []Cmplx, // Complex workspace
+	rwork: []Real, // Real workspace
+	iwork: []Blas_Int, // Integer workspace
+) -> (
+	info: Info,
+	ok: bool,
+) where (Cmplx == complex64 && Real == f32) || (Cmplx == complex128 && Real == f64) {
+	// Validate X11
+	p := X11.rows
+	q := X11.cols
+	ldx11 := X11.ld
+
+	// Validate X21
+	assert(X21 != nil, "X21 must not be nil for 2-by-1 CS decomposition")
+	assert(X21.cols == q, "X21 must have same number of columns as X11")
+	m := p + X21.rows
+	ldx21 := X21.ld
+
+	// Unitary matrix dimensions and pointers
+	ldu1 := Blas_Int(1)
+	u1_ptr: ^Cmplx = nil
+	if U1 != nil {
+		ldu1 = U1.ld
+		u1_ptr = raw_data(U1.data)
+		assert(U1.rows >= p && U1.cols >= p, "U1 matrix dimensions incorrect")
+	}
+
+	ldu2 := Blas_Int(1)
+	u2_ptr: ^Cmplx = nil
+	if U2 != nil {
+		ldu2 = U2.ld
+		u2_ptr = raw_data(U2.data)
+		assert(U2.rows >= (m - p) && U2.cols >= (m - p), "U2 matrix dimensions incorrect")
+	}
+
+	ldv1h := Blas_Int(1)
+	v1h_ptr: ^Cmplx = nil
+	if V1H != nil {
+		ldv1h = V1H.ld
+		v1h_ptr = raw_data(V1H.data)
+		assert(V1H.rows >= q && V1H.cols >= q, "V1H matrix dimensions incorrect")
+	}
+
+	// Job characters
+	jobu1 := u8('N')
+	jobu2 := u8('N')
+	jobv1h := u8('N')
+
+	if U1 != nil do jobu1 = u8('Y')
+	if U2 != nil do jobu2 = u8('Y')
+	if V1H != nil do jobv1h = u8('Y')
+
+	assert(len(theta) >= int(min(p, q)), "Theta array too small")
+
+	lwork := Blas_Int(len(work))
+	lrwork := Blas_Int(len(rwork))
+
+	when Cmplx == complex64 {
+		lapack.cuncsd2by1_(&jobu1, &jobu2, &jobv1h, &m, &p, &q, raw_data(X11.data), &ldx11, raw_data(X21.data), &ldx21, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1h_ptr, &ldv1h, raw_data(work), &lwork, raw_data(rwork), &lrwork, raw_data(iwork), &info)
+	} else when Cmplx == complex128 {
+		lapack.zuncsd2by1_(&jobu1, &jobu2, &jobv1h, &m, &p, &q, raw_data(X11.data), &ldx11, raw_data(X21.data), &ldx21, raw_data(theta), u1_ptr, &ldu1, u2_ptr, &ldu2, v1h_ptr, &ldv1h, raw_data(work), &lwork, raw_data(rwork), &lrwork, raw_data(iwork), &info)
 	}
 
 	return info, info == 0

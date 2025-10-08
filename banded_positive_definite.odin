@@ -44,44 +44,50 @@ band_pd_condition :: proc {
 // ===================================================================================
 
 // Query workspace for condition number estimation
-query_workspace_band_pd_condition :: proc($T: typeid, n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_pd_condition :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query workspace for iterative refinement
-query_workspace_band_pd_refine :: proc($T: typeid, n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_pd_refine :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query workspace for expert solver
-query_workspace_band_pd_solve_expert :: proc($T: typeid, n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_pd_solve_expert :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query array sizes for expert solver
-query_result_sizes_band_pd_solve_expert :: proc(n, nrhs: int) -> (S_size: int, X_rows: int, X_cols: int, ferr_size: int, berr_size: int) {
+query_result_sizes_band_pd_solve_expert :: proc(AB: ^BandedMatrix($T), B: ^Matrix(T)) -> (S_size: int, X_rows: int, X_cols: int, ferr_size: int, berr_size: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	nrhs := int(B.cols)
 	return n, n, nrhs, nrhs, nrhs
 }
 
 // Query array sizes for equilibration
-query_result_sizes_band_pd_equilibrate :: proc(n: int) -> (S_size: int) {
-	return n
+query_result_sizes_band_pd_equilibrate :: proc(AB: ^BandedMatrix($T)) -> (S_size: int) where is_float(T) || is_complex(T) {
+	return int(AB.cols)
 }
 
 // Query array sizes for refinement
-query_result_sizes_band_pd_refine :: proc(nrhs: int) -> (ferr_size: int, berr_size: int) {
+query_result_sizes_band_pd_refine :: proc(B: ^Matrix($T)) -> (ferr_size: int, berr_size: int) where is_float(T) || is_complex(T) {
+	nrhs := int(B.cols)
 	return nrhs, nrhs
 }
 
@@ -195,12 +201,12 @@ band_pd_solve_expert_real :: proc(
 	S: []T, // Scaling factors (input/output)
 	B: ^Matrix(T), // Right-hand side (input/output)
 	X: ^Matrix(T), // Solution matrix (output)
-	rcond: ^T, // Reciprocal condition number (output)
 	ferr: []T, // Forward error bounds (output)
 	berr: []T, // Backward error bounds (output)
 	work: []T, // Workspace
 	iwork: []Blas_Int, // Integer workspace
 ) -> (
+	rcond: T,
 	info: Info,
 	ok: bool,
 ) where is_float(T) {
@@ -226,7 +232,7 @@ band_pd_solve_expert_real :: proc(
 		lapack.dpbsvx_(&fact_c, &uplo_c, &n, &kd, &nrhs, raw_data(AB.data), &ldab, raw_data(AFB.data), &ldafb, equed, raw_data(S), raw_data(B.data), &ldb, raw_data(X.data), &ldx, rcond, raw_data(ferr), raw_data(berr), raw_data(work), raw_data(iwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }
 
 // Expert solve for positive definite banded system (complex version)
@@ -239,12 +245,12 @@ band_pd_solve_expert_complex :: proc(
 	S: []$Real, // Scaling factors (input/output)
 	B: ^Matrix(Cmplx), // Right-hand side (input/output)
 	X: ^Matrix(Cmplx), // Solution matrix (output)
-	rcond: ^Real, // Reciprocal condition number (output)
 	ferr: []Real, // Forward error bounds (output)
 	berr: []Real, // Backward error bounds (output)
 	work: []Cmplx, // Workspace
 	rwork: []Real, // Real workspace
 ) -> (
+	rcond: Real,
 	info: Info,
 	ok: bool,
 ) where (Cmplx == complex64 && Real == f32) || (Cmplx == complex128 && Real == f64) {
@@ -270,7 +276,7 @@ band_pd_solve_expert_complex :: proc(
 		lapack.zpbsvx_(&fact_c, &uplo_c, &n, &kd, &nrhs, raw_data(AB.data), &ldab, raw_data(AFB.data), &ldafb, equed, raw_data(S), raw_data(B.data), &ldb, raw_data(X.data), &ldx, rcond, raw_data(ferr), raw_data(berr), raw_data(work), raw_data(rwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }
 
 // ===================================================================================
@@ -393,10 +399,10 @@ band_pd_condition_real :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($T), // Cholesky factorization from band_pd_cholesky
 	anorm: T, // 1-norm of the original matrix (before factorization)
-	rcond: ^T, // Reciprocal condition number estimate (output)
 	work: []T, // Pre-allocated workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
 ) -> (
+	rcond: T,
 	info: Info,
 	ok: bool,
 ) where is_float(T) {
@@ -415,7 +421,7 @@ band_pd_condition_real :: proc(
 		lapack.dpbcon_(&uplo_c, &n, &kd, raw_data(AB.data), &ldab, &anorm, rcond, raw_data(work), raw_data(iwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }
 
 // Estimate the reciprocal condition number of a positive definite banded matrix (complex version)
@@ -423,10 +429,10 @@ band_pd_condition_complex :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Cholesky factorization from band_pd_cholesky
 	anorm: $Real, // 1-norm of the original matrix (before factorization)
-	rcond: ^Real, // Reciprocal condition number estimate (output)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 ) -> (
+	rcond: Real,
 	info: Info,
 	ok: bool,
 ) where (Cmplx == complex64 && Real == f32) || (Cmplx == complex128 && Real == f64) {
@@ -445,5 +451,5 @@ band_pd_condition_complex :: proc(
 		lapack.zpbcon_(&uplo_c, &n, &kd, raw_data(AB.data), &ldab, &anorm, rcond, raw_data(work), raw_data(rwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }

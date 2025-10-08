@@ -23,7 +23,7 @@ get_lapack_version :: proc() -> (major, minor, patch: Blas_Int) {
 // Estimate reciprocal condition number of general matrix
 // Matrix A must be factored (e.g., by LU decomposition)
 // Query workspace for condition estimation
-query_workspace_condition_estimate :: proc($T: typeid, n: int) -> (work_size: int, iwork_size: int, rwork_size: int) where is_float(T) || is_complex(T) {
+query_workspace_dns_condition_estimate :: proc($T: typeid, n: int) -> (work_size: int, iwork_size: int, rwork_size: int) where is_float(T) || is_complex(T) {
 	when is_float(T) {
 		// Real types: work = 4*n, iwork = n, no rwork
 		work_size = 4 * n

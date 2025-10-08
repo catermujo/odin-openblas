@@ -79,52 +79,61 @@ band_refine_extended :: proc {
 // ===================================================================================
 
 // Query array sizes for LU factorization
-query_result_sizes_band_factor :: proc(m, n: int) -> (ipiv_size: int) {
-	return min(m, n)
+query_result_sizes_band_factor :: proc(AB: ^BandedMatrix($T)) -> (ipiv_size: int) where is_float(T) || is_complex(T) {
+	return int(min(AB.rows, AB.cols))
 }
 
 // Query workspace for condition number estimation
-query_workspace_band_condition :: proc(n, kl, ku: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_condition :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query workspace for expert solver
-query_workspace_band_solve_expert :: proc(n, kl, ku: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_solve_expert :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query array sizes for expert solver
-query_result_sizes_band_solve_expert :: proc(n, kl, ku, nrhs: int, is_complex := false) -> (ipiv_size: int, AFB_rows: int, AFB_cols: int, R_size: int, C_size: int, X_rows: int, X_cols: int, ferr_size: int, berr_size: int) {
+query_result_sizes_band_solve_expert :: proc(AB: ^BandedMatrix($T), B: ^Matrix(T)) -> (ipiv_size: int, AFB_rows: int, AFB_cols: int, R_size: int, C_size: int, X_rows: int, X_cols: int, ferr_size: int, berr_size: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	kl := int(AB.kl)
+	ku := int(AB.ku)
+	nrhs := int(B.cols)
 	return n, 2 * kl + ku + 1, n, n, n, n, nrhs, nrhs, nrhs // ipiv// AFB rows (extended band for factorization)// AFB cols// R (row scale factors)// C (column scale factors)// X rows// X cols// ferr// berr
 }
 
 // Query array sizes for iterative refinement
-query_result_sizes_band_refine :: proc(nrhs: int) -> (ferr_size: int, berr_size: int) {
+query_result_sizes_band_refine :: proc(B: ^Matrix($T)) -> (ferr_size: int, berr_size: int) where is_float(T) || is_complex(T) {
+	nrhs := int(B.cols)
 	return nrhs, nrhs
 }
 
 // Query workspace for iterative refinement
-query_workspace_band_refine :: proc(n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_refine :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 3 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, n, 0
 	}
 }
 
 // Query workspace for extended expert solver
-query_workspace_band_solve_expert_extended :: proc(n, kl, ku: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_solve_expert_extended :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 4 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, 2 * n, 0
 	}
 }
@@ -243,10 +252,10 @@ band_condition_real :: proc(
 	AB: ^BandedMatrix($T), // LU factorization from band_factor
 	ipiv: []Blas_Int, // Pivot indices from band_factor
 	anorm: T, // Norm of original matrix (computed separately)
-	rcond: ^T, // Output: reciprocal condition number
 	work: []T, // Pre-allocated workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
 ) -> (
+	rcond: T,
 	info: Info,
 	ok: bool,
 ) where is_float(T) {
@@ -266,7 +275,7 @@ band_condition_real :: proc(
 		lapack.dgbcon_(&norm_c, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &anorm, rcond, raw_data(work), raw_data(iwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }
 
 // Estimate condition number of banded matrix (complex version)
@@ -275,10 +284,10 @@ band_condition_complex :: proc(
 	AB: ^BandedMatrix($Cmplx), // LU factorization from band_factor
 	ipiv: []Blas_Int, // Pivot indices from band_factor
 	anorm: $Real, // Norm of original matrix (computed separately)
-	rcond: ^Real, // Output: reciprocal condition number
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 ) -> (
+	rcond: Real,
 	info: Info,
 	ok: bool,
 ) where (Cmplx == complex64 && Real == f32) || (Cmplx == complex128 && Real == f64) {
@@ -291,15 +300,15 @@ band_condition_complex :: proc(
 	assert(len(rwork) >= int(n), "Real work array too small")
 
 	norm_c := cast(u8)norm
-	anorm_val := anorm
+	anorm := anorm
 
 	when Cmplx == complex64 {
-		lapack.cgbcon_(&norm_c, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &anorm_val, rcond, raw_data(work), raw_data(rwork), &info)
+		lapack.cgbcon_(&norm_c, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &anorm, rcond, raw_data(work), raw_data(rwork), &info)
 	} else when Cmplx == complex128 {
-		lapack.zgbcon_(&norm_c, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &anorm_val, rcond, raw_data(work), raw_data(rwork), &info)
+		lapack.zgbcon_(&norm_c, &n, &kl, &ku, raw_data(AB.data), &ldab, raw_data(ipiv), &anorm, rcond, raw_data(work), raw_data(rwork), &info)
 	}
 
-	return info, info == 0
+	return rcond, info, info == 0
 }
 
 // ===================================================================================
@@ -613,7 +622,29 @@ band_solve_expert_complex :: proc(
 // ===================================================================================
 
 // Query result sizes for extended expert banded solve
-query_result_sizes_band_solve_expert_extended :: proc(n, kl, ku, nrhs, n_err_bnds: int) -> (ipiv_size: int, AFB_rows: int, AFB_cols: int, R_size: int, C_size: int, X_rows: int, X_cols: int, berr_size: int, err_bnds_norm_size: int, err_bnds_comp_size: int, params_size: int) {
+query_result_sizes_band_solve_expert_extended :: proc(
+	AB: ^BandedMatrix($T),
+	B: ^Matrix(T),
+	n_err_bnds: int = 3,
+) -> (
+	ipiv_size: int,
+	AFB_rows: int,
+	AFB_cols: int,
+	R_size: int,
+	C_size: int,
+	X_rows: int,
+	X_cols: int,
+	berr_size: int,
+	err_bnds_norm_size: int,
+	err_bnds_comp_size: int,
+	params_size: int,
+) where is_float(T) ||
+	is_complex(T) {
+	n := int(AB.cols)
+	kl := int(AB.kl)
+	ku := int(AB.ku)
+	nrhs := int(B.cols)
+
 	ipiv_size = n
 	AFB_rows = 2 * kl + ku + 1
 	AFB_cols = n
@@ -763,7 +794,7 @@ band_solve_expert_extended_complex :: proc(
 	rcond: ^Real, // Output: reciprocal condition number
 	rpvgrw: ^Real, // Output: reciprocal pivot growth factor
 	berr: []Real, // Pre-allocated backward error bounds (output)
-	n_err_bnds: Blas_Int, // Number of error bounds to compute
+	n_err_bnds: Blas_Int = 3, // Number of error bounds to compute
 	err_bnds_norm: []Real, // Pre-allocated normwise error bounds (output)
 	err_bnds_comp: []Real, // Pre-allocated componentwise error bounds (output)
 	params: []Real, // Algorithm parameters (input/output)
@@ -871,16 +902,18 @@ band_solve_expert_extended_complex :: proc(
 // ===================================================================================
 
 // Query result sizes for extended iterative refinement
-query_result_sizes_band_refine_extended :: proc(nrhs: int) -> (rcond_size: int, berr_size: int, err_bnds_norm_size: int, err_bnds_comp_size: int, params_size: int) {
+query_result_sizes_band_refine_extended :: proc(B: ^Matrix($T)) -> (rcond_size: int, berr_size: int, err_bnds_norm_size: int, err_bnds_comp_size: int, params_size: int) where is_float(T) || is_complex(T) {
+	nrhs := int(B.cols)
 	n_err_bnds := 3
 	return 1, nrhs, nrhs * n_err_bnds, nrhs * n_err_bnds, 3
 }
 
 // Query workspace for extended iterative refinement
-query_workspace_band_refine_extended :: proc(n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_refine_extended :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 4 * n, 0, n
-	} else {
+	} else when is_complex(T) {
 		return 2 * n, 2 * n, 0
 	}
 }

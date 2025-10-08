@@ -271,44 +271,60 @@ band_to_lapack_gb :: proc(bm: ^BandedMatrix($T)) -> (ab: []T, m, n, kl, ku, ldab
 	return bm.data, bm.rows, bm.cols, bm.kl, bm.ku, bm.ldab
 }
 
-// Convert BandedMatrix to LAPACK SB/HB format (for symmetric/Hermitian band routines)
-band_to_lapack_sb :: proc(bm: ^BandedMatrix($T)) -> (ab: []T, uplo: UpLo, n, kd, ldab: Blas_Int) {
+// Convert BandedMatrix to SymBand (for symmetric banded routines)
+band_to_symband :: proc(bm: ^BandedMatrix($T), allocator := context.allocator) -> SymBand(T) where is_float(T) {
 	assert(bm.symmetric, "Matrix must be symmetric for SB format")
 	assert(bm.rows == bm.cols, "Matrix must be square for SB format")
 
-	uplo_val: UpLo
-	kd_val: Blas_Int
+	uplo: UpLo
+	kd: Blas_Int
 
 	if bm.ku > 0 {
-		uplo_val = .Upper
-		kd_val = bm.ku
+		uplo = .Upper
+		kd = bm.ku
 	} else {
-		uplo_val = .Lower
-		kd_val = bm.kl
+		uplo = .Lower
+		kd = bm.kl
 	}
 
-	return bm.data, uplo_val, bm.rows, kd_val, bm.ldab
+	return SymBand(T){data = bm.data, n = bm.rows, kd = kd, ldab = bm.ldab, uplo = uplo}
 }
 
-// Convert BandedMatrix to LAPACK TB format (for triangular band routines)
-band_to_lapack_tb :: proc(bm: ^BandedMatrix($T)) -> (ab: []T, uplo: UpLo, diag: Diag, n, k, ldab: Blas_Int) {
-	assert(bm.rows == bm.cols, "Matrix must be square for TB format")
+// Convert BandedMatrix to HermBand (for Hermitian banded routines)
+band_to_hermband :: proc(bm: ^BandedMatrix($T), allocator := context.allocator) -> HermBand(T) where is_complex(T) {
+	assert(bm.symmetric, "Matrix must be Hermitian for HB format")
+	assert(bm.rows == bm.cols, "Matrix must be square for HB format")
 
-	uplo_val: UpLo
-	k_val: Blas_Int
+	uplo: UpLo
+	kd: Blas_Int
 
 	if bm.ku > 0 {
-		uplo_val = .Upper
-		k_val = bm.ku
+		uplo = .Upper
+		kd = bm.ku
 	} else {
-		uplo_val = .Lower
-		k_val = bm.kl
+		uplo = .Lower
+		kd = bm.kl
 	}
 
-	// Default to non-unit diagonal
-	diag_val := Diag.NonUnit // FIXME: check into this
+	return HermBand(T){data = bm.data, n = bm.rows, kd = kd, ldab = bm.ldab, uplo = uplo}
+}
 
-	return bm.data, uplo_val, diag_val, bm.rows, k_val, bm.ldab
+// Convert BandedMatrix to TriBand (for triangular banded routines)
+band_to_triband :: proc(bm: ^BandedMatrix($T), diag: Diag = .NonUnit) -> TriBand(T) where is_float(T) || is_complex(T) {
+	assert(bm.rows == bm.cols, "Matrix must be square for TB format")
+
+	uplo: UpLo
+	k: Blas_Int
+
+	if bm.ku > 0 {
+		uplo = .Upper
+		k = bm.ku
+	} else {
+		uplo = .Lower
+		k = bm.kl
+	}
+
+	return TriBand(T){data = bm.data, n = bm.rows, k = k, ldab = bm.ldab, uplo = uplo, diag = diag}
 }
 
 // ===================================================================================

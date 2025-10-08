@@ -81,19 +81,11 @@ band_make_triangular :: proc(
 	diag: Diag,
 	$T: typeid,
 	allocator := context.allocator,
-) -> BandedMatrix(T) {
+) -> TriBand(T) where is_float(T) || is_complex(T) {
 	ldab := k + 1
 	data_size := ldab * n
 
-	// For triangular banded, set appropriate kl/ku
-	kl, ku: Blas_Int
-	if uplo == .Upper {
-		kl, ku = 0, Blas_Int(k)
-	} else {
-		kl, ku = Blas_Int(k), 0
-	}
-
-	return BandedMatrix(T){data = make([]T, data_size, allocator), rows = Blas_Int(n), cols = Blas_Int(n), kl = kl, ku = ku, ldab = Blas_Int(ldab)}
+	return TriBand(T){data = make([]T, data_size, allocator), n = Blas_Int(n), k = Blas_Int(k), ldab = Blas_Int(ldab), uplo = uplo, diag = diag}
 }
 
 // ===================================================================================
@@ -136,6 +128,150 @@ band_set :: proc(bm: ^BandedMatrix($T), i, j: int, value: T) -> bool {
 }
 
 // ===================================================================================
+// TRIANGULAR BANDED MATRIX INDEXING
+// ===================================================================================
+
+// Access element (i,j) in triangular banded storage
+triband_index :: proc(tb: ^TriBand($T), i, j: int) -> (idx: int, stored: bool) where is_float(T) || is_complex(T) {
+	assert(i >= 0 && i < int(tb.n) && j >= 0 && j < int(tb.n), "Index out of bounds")
+
+	// Check if element is within the triangular band
+	if tb.uplo == .Upper {
+		if i > j || i < j - int(tb.k) {
+			return -1, false
+		}
+		// Upper triangular: AB[k + i - j, j] = A[i,j]
+		idx = int(tb.k) + i - j + j * int(tb.ldab)
+	} else {
+		if i < j || i > j + int(tb.k) {
+			return -1, false
+		}
+		// Lower triangular: AB[i - j, j] = A[i,j]
+		idx = i - j + j * int(tb.ldab)
+	}
+	return idx, true
+}
+
+// Get element (i,j) from triangular banded matrix
+triband_get :: proc(tb: ^TriBand($T), i, j: int) -> (value: T, stored: bool) where is_float(T) || is_complex(T) {
+	idx, is_stored := triband_index(tb, i, j)
+	if !is_stored {
+		return T{}, false
+	}
+	return tb.data[idx], true
+}
+
+// Set element (i,j) in triangular banded matrix
+triband_set :: proc(tb: ^TriBand($T), i, j: int, value: T) -> bool where is_float(T) || is_complex(T) {
+	idx, is_stored := triband_index(tb, i, j)
+	if !is_stored {
+		return false
+	}
+	tb.data[idx] = value
+	return true
+}
+
+// ===================================================================================
+// SYMMETRIC BANDED MATRIX INDEXING
+// ===================================================================================
+
+// Access element (i,j) in symmetric banded storage
+symband_index :: proc(sb: ^SymBand($T), i, j: int) -> (idx: int, stored: bool) where is_float(T) {
+	assert(i >= 0 && i < int(sb.n) && j >= 0 && j < int(sb.n), "Index out of bounds")
+
+	// For symmetric, only one triangle is stored
+	if sb.uplo == .Upper {
+		if i > j || i < j - int(sb.kd) {
+			return -1, false
+		}
+		// Upper triangle: AB[kd + i - j, j] = A[i,j]
+		idx = int(sb.kd) + i - j + j * int(sb.ldab)
+	} else {
+		if i < j || i > j + int(sb.kd) {
+			return -1, false
+		}
+		// Lower triangle: AB[i - j, j] = A[i,j]
+		idx = i - j + j * int(sb.ldab)
+	}
+	return idx, true
+}
+
+// Get element (i,j) from symmetric banded matrix
+symband_get :: proc(sb: ^SymBand($T), i, j: int) -> (value: T, stored: bool) where is_float(T) {
+	// Check stored triangle first
+	idx, is_stored := symband_index(sb, i, j)
+	if is_stored {
+		return sb.data[idx], true
+	}
+	// Try opposite triangle (symmetric property)
+	idx, is_stored = symband_index(sb, j, i)
+	if is_stored {
+		return sb.data[idx], true
+	}
+	return T{}, false
+}
+
+// Set element (i,j) in symmetric banded matrix
+symband_set :: proc(sb: ^SymBand($T), i, j: int, value: T) -> bool where is_float(T) {
+	idx, is_stored := symband_index(sb, i, j)
+	if !is_stored {
+		return false
+	}
+	sb.data[idx] = value
+	return true
+}
+
+// ===================================================================================
+// HERMITIAN BANDED MATRIX INDEXING
+// ===================================================================================
+
+// Access element (i,j) in Hermitian banded storage
+hermband_index :: proc(hb: ^HermBand($T), i, j: int) -> (idx: int, stored: bool) where is_complex(T) {
+	assert(i >= 0 && i < int(hb.n) && j >= 0 && j < int(hb.n), "Index out of bounds")
+
+	// For Hermitian, only one triangle is stored
+	if hb.uplo == .Upper {
+		if i > j || i < j - int(hb.kd) {
+			return -1, false
+		}
+		// Upper triangle: AB[kd + i - j, j] = A[i,j]
+		idx = int(hb.kd) + i - j + j * int(hb.ldab)
+	} else {
+		if i < j || i > j + int(hb.kd) {
+			return -1, false
+		}
+		// Lower triangle: AB[i - j, j] = A[i,j]
+		idx = i - j + j * int(hb.ldab)
+	}
+	return idx, true
+}
+
+// Get element (i,j) from Hermitian banded matrix
+hermband_get :: proc(hb: ^HermBand($T), i, j: int) -> (value: T, stored: bool) where is_complex(T) {
+	// Check stored triangle first
+	idx, is_stored := hermband_index(hb, i, j)
+	if is_stored {
+		return hb.data[idx], true
+	}
+	// Try opposite triangle (Hermitian property - conjugate transpose)
+	idx, is_stored = hermband_index(hb, j, i)
+	if is_stored {
+		return conj(hb.data[idx]), true
+	}
+	return T{}, false
+}
+
+// Set element (i,j) in Hermitian banded matrix
+hermband_set :: proc(hb: ^HermBand($T), i, j: int, value: T) -> bool where is_complex(T) {
+	idx, is_stored := hermband_index(hb, i, j)
+	if !is_stored {
+		return false
+	}
+	hb.data[idx] = value
+	return true
+}
+
+// ===================================================================================
 // BANDED MATRIX PROPERTIES AND VALIDATION
 // ===================================================================================
 
@@ -170,6 +306,24 @@ band_delete :: proc(bm: ^BandedMatrix($T), allocator := context.allocator) {
 	bm.data = nil
 }
 
+// Delete triangular banded matrix data
+triband_delete :: proc(tb: ^TriBand($T), allocator := context.allocator) where is_float(T) || is_complex(T) {
+	delete(tb.data, allocator)
+	tb.data = nil
+}
+
+// Delete symmetric banded matrix data
+symband_delete :: proc(sb: ^SymBand($T), allocator := context.allocator) where is_float(T) {
+	delete(sb.data, allocator)
+	sb.data = nil
+}
+
+// Delete Hermitian banded matrix data
+hermband_delete :: proc(hb: ^HermBand($T), allocator := context.allocator) where is_complex(T) {
+	delete(hb.data, allocator)
+	hb.data = nil
+}
+
 // Clone a banded matrix
 band_clone :: proc(bm: ^BandedMatrix($T), allocator := context.allocator) -> BandedMatrix(T) {
 	clone := BandedMatrix(T) {
@@ -184,63 +338,3 @@ band_clone :: proc(bm: ^BandedMatrix($T), allocator := context.allocator) -> Ban
 	copy(clone.data, bm.data)
 	return clone
 }
-
-// // ===================================================================================
-// // WORKSPACE AND SIZE QUERIES
-// // ===================================================================================
-// // FIXME: no cstring; do we even need this?? have specific queries for ops..
-// // Query workspace requirements for general banded operations
-// query_workspace_band :: proc(operation: string, $T: typeid, n, kl, ku: int) -> (work_size, rwork_size, iwork_size: int) {
-// 	// Default workspace requirements for common operations
-// 	switch operation {
-// 	case "factor":
-// 		// LU factorization
-// 		work_size = 0
-// 		rwork_size = 0
-// 		iwork_size = 0
-// 	case "solve":
-// 		// Linear solve
-// 		work_size = 0
-// 		rwork_size = 0
-// 		iwork_size = 0
-// 	case "condition":
-// 		// Condition number estimation
-// 		when is_float(T) {
-// 			work_size = 3 * n
-// 			iwork_size = n
-// 		} else {
-// 			work_size = 2 * n
-// 			rwork_size = n
-// 		}
-// 	case "equilibrate":
-// 		// matrix equilibration
-// 		work_size = 0
-// 		rwork_size = 0
-// 		iwork_size = 0
-// 	case:
-// 		// Unknown operation, return minimal workspace
-// 		work_size = n
-// 		rwork_size = 0
-// 		iwork_size = 0
-// 	}
-
-// 	return
-// }
-
-// // Allocate workspace for banded operations
-// // FIXME: No cstrings.. do we even need?
-// allocate_band_workspace :: proc(operation: string, $T: typeid, n, kl, ku: int, allocator := context.allocator) -> (work: []T, rwork: []f64, iwork: []Blas_Int) {
-// 	work_size, rwork_size, iwork_size := query_workspace_band(operation, T, n, kl, ku)
-
-// 	if work_size > 0 {
-// 		work = make([]T, work_size, allocator)
-// 	}
-// 	if rwork_size > 0 {
-// 		rwork = make([]f64, rwork_size, allocator)
-// 	}
-// 	if iwork_size > 0 {
-// 		iwork = make([]Blas_Int, iwork_size, allocator)
-// 	}
-
-// 	return
-// }

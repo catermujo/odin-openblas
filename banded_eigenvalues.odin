@@ -72,7 +72,8 @@ band_eigen_generalized_expert :: proc {
 // ===================================================================================
 
 // Query result sizes for eigenvalue computation
-query_result_sizes_band_eigen :: proc(n: int, compute_vectors: bool) -> (w_size: int, z_rows: int, z_cols: int) {
+query_result_sizes_band_eigen :: proc(AB: ^BandedMatrix($T), compute_vectors: bool) -> (w_size: int, z_rows: int, z_cols: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
 	w_size = n
 	if compute_vectors {
 		z_rows = n
@@ -82,14 +83,15 @@ query_result_sizes_band_eigen :: proc(n: int, compute_vectors: bool) -> (w_size:
 }
 
 // Query workspace for standard eigenvalue computation
-query_workspace_band_eigen :: proc(n: int, compute_vectors: bool, is_complex := false) -> (work: int, rwork: int) {
-	if !is_complex {
+query_workspace_band_eigen :: proc(AB: ^BandedMatrix($T), compute_vectors: bool) -> (work: int, rwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		if compute_vectors {
 			return 3 * n - 2, 0
 		} else {
 			return 1, 0
 		}
-	} else {
+	} else when is_complex(T) {
 		if compute_vectors {
 			return n, max(1, 3 * n - 2)
 		} else {
@@ -99,14 +101,15 @@ query_workspace_band_eigen :: proc(n: int, compute_vectors: bool, is_complex := 
 }
 
 // Query workspace for divide-and-conquer algorithm
-query_workspace_band_eigen_dc :: proc(n: int, compute_vectors: bool, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_eigen_dc :: proc(AB: ^BandedMatrix($T), compute_vectors: bool) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		if compute_vectors {
 			return 1 + 6 * n + 2 * n * n, 1 + 5 * n + 2 * n * n, 3 + 5 * n
 		} else {
 			return 2 * n, 0, 1
 		}
-	} else {
+	} else when is_complex(T) {
 		if compute_vectors {
 			return 1 + 5 * n + 2 * n * n, 1 + 5 * n + 2 * n * n, 3 + 5 * n
 		} else {
@@ -116,19 +119,21 @@ query_workspace_band_eigen_dc :: proc(n: int, compute_vectors: bool, is_complex 
 }
 
 // Query workspace for expert eigenvalue computation with subset selection
-query_workspace_band_eigen_expert_subset :: proc(n: int, is_complex := false) -> (work: int, rwork: int, iwork: int) {
-	if !is_complex {
+query_workspace_band_eigen_expert_subset :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int, iwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return 7 * n, 0, 5 * n
-	} else {
+	} else when is_complex(T) {
 		return n, 7 * n, 5 * n
 	}
 }
 
 // Query workspace for tridiagonal reduction with Q generation
-query_workspace_band_to_tridiagonal_with_q :: proc(n: int, is_complex := false) -> (work: int, rwork: int) {
-	if !is_complex {
+query_workspace_band_to_tridiagonal_with_q :: proc(AB: ^BandedMatrix($T)) -> (work: int, rwork: int) where is_float(T) || is_complex(T) {
+	n := int(AB.cols)
+	when is_float(T) {
 		return n, 0
-	} else {
+	} else when is_complex(T) {
 		return n, max(1, n - 1)
 	}
 }
@@ -143,7 +148,7 @@ band_eigen_real :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($T), // Banded matrix (input/output - destroyed)
 	w: []T, // Pre-allocated eigenvalues array (size n)
-	Z: ^Matrix(T) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(T), // Pre-allocated eigenvectors matrix (optional)
 	work: []T, // Pre-allocated workspace
 ) -> (
 	info: Info,
@@ -183,7 +188,7 @@ band_eigen_complex :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Banded matrix (input/output - destroyed)
 	w: []$Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 ) -> (
@@ -230,7 +235,7 @@ band_eigen_dc_real :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($T), // Banded matrix (input/output - destroyed)
 	w: []T, // Pre-allocated eigenvalues array (size n)
-	Z: ^Matrix(T) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(T), // Pre-allocated eigenvectors matrix (optional)
 	work: []T, // Pre-allocated workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
 ) -> (
@@ -271,7 +276,7 @@ band_eigen_dc_complex :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Banded matrix (input/output - destroyed)
 	w: []$Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
@@ -325,7 +330,7 @@ band_eigen_expert_real :: proc(
 	iu: int = 1, // Upper index of eigenvalues to compute (if range == .INDEX)
 	abstol: T, // Absolute error tolerance for eigenvalues
 	w: []T, // Pre-allocated eigenvalues array (size n)
-	Z: ^Matrix(T) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(T), // Pre-allocated eigenvectors matrix (optional)
 	m: ^Blas_Int, // Number of eigenvalues found (output)
 	work: []T, // Pre-allocated workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
@@ -382,14 +387,14 @@ band_eigen_expert_complex :: proc(
 	range: EigenRangeOption,
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Banded matrix (input/output - destroyed)
-	Q: ^BandedMatrix(Cmplx) = nil, // Optional Q matrix from reduction (input/output)
+	Q: ^BandedMatrix(Cmplx), // Optional Q matrix from reduction (input/output)
 	vl: $Real, // Lower bound of eigenvalue range (if range == .VALUE)
 	vu: Real, // Upper bound of eigenvalue range (if range == .VALUE)
 	il: int = 1, // Lower index of eigenvalues to compute (if range == .INDEX)
 	iu: int = 1, // Upper index of eigenvalues to compute (if range == .INDEX)
 	abstol: Real, // Absolute error tolerance for eigenvalues
 	w: []Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	m: ^Blas_Int, // Number of eigenvalues found (output)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
@@ -453,7 +458,7 @@ band_to_tridiagonal_with_q_real :: proc(
 	AB: ^BandedMatrix($T), // Banded matrix (input/output - reduced to tridiagonal)
 	D: []T, // Pre-allocated diagonal elements (size n)
 	E: []T, // Pre-allocated off-diagonal elements (size n-1)
-	Q: ^Matrix(T) = nil, // Pre-allocated transformation matrix (optional)
+	Q: ^Matrix(T), // Pre-allocated transformation matrix (optional)
 	work: []T, // Pre-allocated workspace
 ) -> (
 	info: Info,
@@ -494,7 +499,7 @@ band_to_tridiagonal_with_q_complex :: proc(
 	AB: ^BandedMatrix($Cmplx), // Banded matrix (input/output - reduced to tridiagonal)
 	D: []$Real, // Pre-allocated diagonal elements (size n) - always real
 	E: []Real, // Pre-allocated off-diagonal elements (size n-1) - always real
-	Q: ^Matrix(Cmplx) = nil, // Pre-allocated transformation matrix (optional)
+	Q: ^Matrix(Cmplx), // Pre-allocated transformation matrix (optional)
 	work: []Cmplx, // Pre-allocated workspace
 ) -> (
 	info: Info,
@@ -539,7 +544,7 @@ band_eigen_generalized_real :: proc(
 	AB: ^BandedMatrix($T), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(T), // Banded matrix B (input/output - destroyed)
 	w: []T, // Pre-allocated eigenvalues array (size n)
-	Z: ^Matrix(T) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(T), // Pre-allocated eigenvectors matrix (optional)
 	work: []T, // Pre-allocated workspace
 ) -> (
 	info: Info,
@@ -582,7 +587,7 @@ band_eigen_generalized_complex :: proc(
 	AB: ^BandedMatrix($Cmplx), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(Cmplx), // Banded matrix B (input/output - destroyed)
 	w: []$Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 ) -> (
@@ -630,7 +635,7 @@ band_eigen_generalized_dc_real :: proc(
 	AB: ^BandedMatrix($T), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(T), // Banded matrix B (input/output - destroyed)
 	w: []T, // Pre-allocated eigenvalues array (size n)
-	Z: ^Matrix(T) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(T), // Pre-allocated eigenvectors matrix (optional)
 	work: []T, // Pre-allocated workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
 ) -> (
@@ -674,7 +679,7 @@ band_eigen_generalized_dc_complex :: proc(
 	AB: ^BandedMatrix($Cmplx), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(Cmplx), // Banded matrix B (input/output - destroyed)
 	w: []$Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
 	iwork: []Blas_Int, // Pre-allocated integer workspace
@@ -724,7 +729,7 @@ band_eigen_generalized_expert_real :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($T), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(T), // Banded matrix B (input/output - destroyed)
-	Q: ^BandedMatrix(T) = nil, // Optional Q matrix from reduction (input/output)
+	Q: ^BandedMatrix(T), // Optional Q matrix from reduction (input/output)
 	vl: T, // Lower bound of eigenvalue range (if range == .VALUE)
 	vu: T, // Upper bound of eigenvalue range (if range == .VALUE)
 	il: int = 1, // Lower index of eigenvalues to compute (if range == .INDEX)
@@ -791,14 +796,14 @@ band_eigen_generalized_expert_complex :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Banded matrix A (input/output - destroyed)
 	BB: ^BandedMatrix(Cmplx), // Banded matrix B (input/output - destroyed)
-	Q: ^BandedMatrix(Cmplx) = nil, // Optional Q matrix from reduction (input/output)
+	Q: ^BandedMatrix(Cmplx), // Optional Q matrix from reduction (input/output)
 	vl: $Real, // Lower bound of eigenvalue range (if range == .VALUE)
 	vu: Real, // Upper bound of eigenvalue range (if range == .VALUE)
 	il: int = 1, // Lower index of eigenvalues to compute (if range == .INDEX)
 	iu: int = 1, // Upper index of eigenvalues to compute (if range == .INDEX)
 	abstol: Real, // Absolute error tolerance for eigenvalues
 	w: []Real, // Pre-allocated eigenvalues array (size n) - always real
-	Z: ^Matrix(Cmplx) = nil, // Pre-allocated eigenvectors matrix (optional)
+	Z: ^Matrix(Cmplx), // Pre-allocated eigenvectors matrix (optional)
 	m: ^Blas_Int, // Number of eigenvalues found (output)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []Real, // Pre-allocated real workspace
@@ -863,7 +868,7 @@ band_reduce_generalized_real :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($T), // Banded matrix A (input/output - reduced)
 	BB: ^BandedMatrix(T), // Cholesky factor of B (input - from band_cholesky)
-	X: ^Matrix(T) = nil, // Optional transformation matrix (output)
+	X: ^Matrix(T), // Optional transformation matrix (output)
 	work: []T, // Pre-allocated workspace
 ) -> (
 	info: Info,
@@ -903,7 +908,7 @@ band_reduce_generalized_complex :: proc(
 	uplo: MatrixRegion,
 	AB: ^BandedMatrix($Cmplx), // Banded matrix A (input/output - reduced)
 	BB: ^BandedMatrix(Cmplx), // Cholesky factor of B (input - from band_cholesky)
-	X: ^Matrix(Cmplx) = nil, // Optional transformation matrix (output)
+	X: ^Matrix(Cmplx), // Optional transformation matrix (output)
 	work: []Cmplx, // Pre-allocated workspace
 	rwork: []$Real, // Pre-allocated real workspace
 ) -> (
