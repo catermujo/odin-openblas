@@ -8,7 +8,9 @@ Provides a complete set of bindings to [OpenBLAS 0.3.30](https://github.com/Open
 
 This library is in the *early* stages of design and should be considered unstable (and likely has errors). Raw bindings were produced with Odin-Bindgen, and subsequently cleaned up.
 
-Files at the top level build okay, but need the design changes noted below. Files in the `_UNTESTED` folder are not yet cleaned up.
+I believe I have most/all of the public LAPACK and BLAS APIs wrapped, however some types are not yet using the type specific wrapper structs.
+
+Due to conditional compilation, it is likely that there are compiler errors I haven't yet found. Adding tests / verifying the wrappers is an ongoing activity.
 
 ## Dependancy
 
