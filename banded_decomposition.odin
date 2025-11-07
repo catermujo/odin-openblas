@@ -33,19 +33,7 @@ BidiagVectorOption :: enum u8 {
 // ===================================================================================
 
 // Query result sizes for banded to bidiagonal reduction
-query_result_sizes_band_to_bidi :: proc(
-	AB: ^BandedMatrix($T),
-	vect: BidiagVectorOption,
-	apply_c: bool = false,
-) -> (
-	d_size: int,
-	e_size: int,
-	q_rows: int,
-	q_cols: int,
-	pt_rows: int,
-	pt_cols: int,
-	c_required: bool,
-) where is_float(T) || is_complex(T) {
+query_result_sizes_band_to_bidi :: proc(AB: ^BandedMatrix($T), vect: BidiagVectorOption, apply_c: bool = false) -> (d_size: int, e_size: int, q_rows: int, q_cols: int, pt_rows: int, pt_cols: int, c_required: bool) where is_float(T) || is_complex(T) {
 	m := int(AB.rows)
 	n := int(AB.cols)
 	min_mn := min(m, n)

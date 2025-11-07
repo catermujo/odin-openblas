@@ -4,9 +4,11 @@ import "core:c"
 
 
 when ODIN_OS == .Windows {
+	// @(export)
 	foreign import openblas "../OpenBLAS-0.3.30-x64-64/lib/libopenblas.lib"
 	// foreign import openblas "../openblas.lib"
-} else when ODIN_OS == .Linux {
+} else when ODIN_OS == .Linux || ODIN_OS == .Darwin {
+	// @(export)
 	foreign import openblas "system:openblas"
 }
 

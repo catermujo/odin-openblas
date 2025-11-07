@@ -1,6 +1,6 @@
 # LAPACK Function Mapping
 
-## Signature Naming Conention
+## Signature Naming Convention
 
 | Prefix     | Type                    | Example Functions                                 |
 |------------|-------------------------|---------------------------------------------------|

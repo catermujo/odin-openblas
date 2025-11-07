@@ -2,15 +2,7 @@ package f77
 
 import "core:c"
 
-when ODIN_OS == .Windows {
-	foreign import lib "../../vendor/linalg/windows-x64/lib/openblas64.lib"
-} else when ODIN_OS == .Linux {
-	// use ilp64
-	foreign import lib "system:openblas64"
-}
-
 char :: byte
-
 
 FORTRAN_STRLEN :: c.size_t
 

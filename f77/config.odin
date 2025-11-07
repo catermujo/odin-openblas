@@ -1,15 +1,5 @@
 package f77
 
-import "core:c"
-
-
-when ODIN_OS == .Windows {
-	foreign import lib "../../vendor/linalg/windows-x64/lib/openblas64.lib"
-} else when ODIN_OS == .Linux {
-	// Use ILP64 version of OpenBLAS (64-bit integers)
-	foreign import lib "system:openblas64"
-}
-
 OS_WINNT :: 1
 ARCH_ARM64 :: 1
 C_Clang :: 1

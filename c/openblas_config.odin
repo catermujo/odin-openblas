@@ -3,11 +3,11 @@ package openblas_c
 import "core:c"
 
 
-when ODIN_OS == .Windows {
-	foreign import lib "../../vendor/linalg/windows-x64/lib/openblas64.lib"
-} else when ODIN_OS == .Linux {
-	foreign import lib "system:openblas"
-}
+// when ODIN_OS == .Windows {
+// 	foreign import lib "../../vendor/linalg/windows-x64/lib/openblas64.lib"
+// } else when ODIN_OS == .Linux {
+// 	foreign import lib "system:openblas"
+// }
 
 OS_WINNT :: 1
 ARCH_ARM64 :: 1

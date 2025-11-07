@@ -2,5 +2,5 @@ FORTRAN_LAPACK/
 tests/
 *.exe
 *.pdb
-OpenBLAS-0.3.30-x64-64/
 tmp/
+OpenBLAS*

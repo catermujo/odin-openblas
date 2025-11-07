@@ -3,9 +3,11 @@ package f77
 import "core:c"
 
 when ODIN_OS == .Windows {
+	@(export)
 	foreign import lib "../../vendor/linalg/windows-x64/lib/openblas64.lib"
-} else when ODIN_OS == .Linux {
+} else when ODIN_OS == .Linux || ODIN_OS == .Darwin {
 	// Use ILP64 version of OpenBLAS (64-bit integers)
+	@(export)
 	foreign import lib "system:openblas64"
 }
 
