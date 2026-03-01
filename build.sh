@@ -2,7 +2,7 @@
 
 set -e
 
-[ -d OpenBLAS ] || git clone --recurse-submodules https://github.com/OpenMathLib/OpenBLAS --depth=1
+[ -d OpenBLAS ] || git clone --recurse-submodules --revision v0.3.30 https://github.com/OpenMathLib/OpenBLAS --depth=1
 
 cd OpenBLAS
 if [ $(uname -s) = 'Darwin' ]; then
